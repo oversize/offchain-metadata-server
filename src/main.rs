@@ -13,15 +13,6 @@ async fn main() -> Result<(), std::io::Error> {
     let listener = TcpListener::bind("127.0.0.1:8000")
         .expect("Failed to bind random port");
 
-    let _testfile = std::path::Path::new("/Users/msch/src/rust/token-api-z2prod/fed1c459a47cbff56bd7d29c2dde0de3e9bd15cee02b98622fce82f743617264616e6f476f6c64.json");
-    //println!("{:#?}", v);
-    //let paths = fs::read_dir("/Users/msch/src/cf/cardano-token-registry/mappings").unwrap();
-    //for path in paths {
-    //    let file = path.expect("File not found");
-    //    let path = file.path();
-    //    println!("File {}", path.display());
-    //    println!("json {:?}", d)
-    //}
 
     run(listener)?.await
 }
