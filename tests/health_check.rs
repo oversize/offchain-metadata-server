@@ -1,6 +1,7 @@
 //! tests/health_check.rs
 use tokenapi;
 use std::net::TcpListener;
+use std::path::PathBuf;
 
 // spawn_app runs our application in the background so we can run our tests
 // against it. Should that server fail to create there is no need to
@@ -13,7 +14,9 @@ fn spawn_app() -> String {
         .expect("Failed to bind random port");
     let port = listener.local_addr().unwrap().port();
     let ip = listener.local_addr().unwrap().ip();
-    let server = tokenapi::run(listener).expect("Failed to create server");
+    let mappings = PathBuf::from("./registry_data");
+
+    let server = tokenapi::run(listener, mappings).expect("Failed to create server");
 
     // tokio spawn takes a future and hands it over to its runtime for
     // continious polling. That polling in the background allows our tests
@@ -44,3 +47,6 @@ async fn health_check_works() {
     assert!(response.status().is_success());
     assert_eq!(Some(0), response.content_length());
 }
+
+
+

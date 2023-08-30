@@ -61,7 +61,8 @@ def batch_request_subjects():
     })
     #url = "https://api.metadata.staging.cf-deployments.org/mainnet/metadata/query"
     #url = "https://tokens.cardano.org/metadata/query"
-    url = "http://127.0.0.1:8081/metadata/query"
+    # url = "http://127.0.0.1:8081/metadata/query"
+    url = "https://tokens.dev.colo-primary.cf-systems.org/metadata/query"
     print(url)
     rsp = requests.post(url, json=_data)
     print(f"{rsp.status_code} - {rsp.reason} - {rsp.request.headers}")

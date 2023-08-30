@@ -42,6 +42,7 @@ pub fn run(listener: TcpListener, mappings: PathBuf) -> Result<Server, std::io::
             // crate that writes them to stdout!
             .wrap(Logger::default())
             .service(api::health)
+            .service(api::single_subject)
             .service(api::all_properties)
             .service(api::query)
         })
