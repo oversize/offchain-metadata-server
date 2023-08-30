@@ -1,18 +1,26 @@
-use std::{net::TcpListener, path::Path};
-use tokenapi::run;
-use std::fs;
+use std::net::TcpListener;
+use std::path::PathBuf;
+use std::env;
 use env_logger::Env;
+use tokenapi::run;
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
     // `init` does call `set_logger`, so this is all we need to do.
     // We are falling back to printing all logs at info-level or above
     // if the RUST_LOG environment variable has not been set.
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(
+        Env::default().default_filter_or("info")
+    ).init();
 
-    let listener = TcpListener::bind("127.0.0.1:8000")
+    let mappings = PathBuf::from(
+        env::var("MAPPINGS").expect("You need to set MAPPINGS")
+    );
+    let listen_address = env::var("LISTEN")
+        .expect("You need to set LISTEN to e.g. 0.0.0.0:8000");
+
+    let listener = TcpListener::bind(listen_address)
         .expect("Failed to bind random port");
 
-
-    run(listener)?.await
+    run(listener, mappings)?.await
 }
