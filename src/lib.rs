@@ -1,64 +1,20 @@
 use std::net::TcpListener;
-use std::path::Path;
 use std::path::PathBuf;
-use std::env;
-use std::fs::{read_dir, File};
+use std::fs::read_dir;
 use std::collections::HashMap;
 use std::str::FromStr;
 
 use actix_web::middleware::Logger;
-use actix_web::{get, web, App, HttpRequest, HttpServer, Responder, HttpResponse};
+use actix_web::{web, App, HttpServer};
 use actix_web::dev::Server;
 use serde_json;
 
-
-struct _PreImage {
-    alg: String,
-    msg: String
-}
-
-struct _MetaData {
-    subject: String,
-    policy: String,
-    name: String,
-    description: String,
-    ticker: String,
-    decimals: String,
-    url: String,
-    logo: String,
-}
-
-struct AppState {
-    metadata: HashMap<String, serde_json::Value>,
-}
-
-async fn _greet(req: HttpRequest) -> impl Responder {
-    let name = req.match_info().get("name").unwrap_or("World");
-    format!("Hello {}!", &name)
-}
-
-async fn health() -> impl Responder {
-    println!("health");
-    HttpResponse::Ok()
-}
-
-#[get("/metadata/{subject}")]
-async fn all_properties(path: web::Path<String>, data: web::Data<AppState>) -> impl Responder {
-    // Extract subject from path
-    let subject = path.into_inner();
-    dbg!(&subject);
-    // Extract Value and return to json
-    let meta = data.metadata.get(&subject).expect("Could not find it ");
-    //println!("{:#?}", data.metadata);
-    HttpResponse::Ok().json(meta)
-}
-
+mod api;
 
 // Run creates the server and returns a Result of that try
 // Because creation of the server might fail during bind, where the ? indicates
 // the possibility of an error bubbling up
 pub fn run(listener: TcpListener, mappings: PathBuf) -> Result<Server, std::io::Error> {
-
     let mut metadatas: HashMap<String, serde_json::Value> = HashMap::new();
     // let _testfile = std::path::Path::new("/Users/msch/src/rust/token-api-z2prod/fed1c459a47cbff56bd7d29c2dde0de3e9bd15cee02b98622fce82f743617264616e6f476f6c64.json");
     println!("{:?}", mappings);
@@ -78,15 +34,16 @@ pub fn run(listener: TcpListener, mappings: PathBuf) -> Result<Server, std::io::
     let server = HttpServer::new(move || {
         App::new()
             // Sharing the state with the handler
-            .app_data(web::Data::new(AppState {
+            .app_data(web::Data::new(api::AppState {
                 metadata: metadatas.clone()
             })) // add shared state
 
             // Logger is a middleware that logs the requests, but its the env_logger
             // crate that writes them to stdout!
             .wrap(Logger::default())
-            .route("/health", web::get().to(health))
-            .service(all_properties)
+            .service(api::health)
+            .service(api::all_properties)
+            .service(api::query)
         })
         //.bind("127.0.0.1:8000")?
         .listen(listener)?
