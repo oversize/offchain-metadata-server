@@ -1519,6 +1519,7 @@ dependencies = [
  "actix-settings",
  "actix-web",
  "env_logger",
+ "log",
  "reqwest",
  "serde",
  "serde_json",

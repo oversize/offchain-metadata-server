@@ -10,7 +10,7 @@ async fn main() -> Result<(), std::io::Error> {
     // We are falling back to printing all logs at info-level or above
     // if the RUST_LOG environment variable has not been set.
     env_logger::Builder::from_env(
-        Env::default().default_filter_or("info")
+        Env::default().default_filter_or("debug")
     ).init();
 
     let mappings = PathBuf::from(

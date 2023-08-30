@@ -2,6 +2,7 @@ use actix_web::{get, post, web, HttpResponse, Responder};
 use serde::Deserialize;
 use serde_json;
 use std::collections::HashMap;
+use log;
 
 pub struct AppState {
     pub metadata: HashMap<String, serde_json::Value>,
@@ -40,11 +41,19 @@ pub async fn health() -> impl Responder {
 pub async fn single_subject(path: web::Path<String>, data: web::Data<AppState>) -> impl Responder {
     // Extract subject from path
     let subject = path.into_inner();
-    // Extract Value and return to json
-    let meta = data.metadata.get(&subject).expect("Could not find it ");
-    //println!("{:#?}", data.metadata);
-    HttpResponse::Ok().json(meta)
-}
+    match data.metadata.get(&subject) {
+        Some(d) => {
+            // todo: this may panic!
+            let name = d.get("name").unwrap().get("value").unwrap();
+            log::debug!("Found {} for {}", name, subject);
+            return HttpResponse::Ok().json(d);
+        },
+        None => {
+            log::debug!("Nothing found for {}", subject);
+            return HttpResponse::NotFound().body("");
+        }
+    };
+   }
 
 /// Endpoint to retrieve all porperty names for a given subject
 #[get("/metadata/{subject}/properties")]

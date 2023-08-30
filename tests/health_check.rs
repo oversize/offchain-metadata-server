@@ -1,7 +1,9 @@
 //! tests/health_check.rs
 use tokenapi;
+use std::io::Read;
 use std::net::TcpListener;
 use std::path::PathBuf;
+use std::fs::File;
 
 // spawn_app runs our application in the background so we can run our tests
 // against it. Should that server fail to create there is no need to
@@ -43,10 +45,49 @@ async fn health_check_works() {
         .send()
         .await
         .expect("Failed to execute request.");
-    // Assert
+
     assert!(response.status().is_success());
     assert_eq!(Some(0), response.content_length());
 }
 
+
+#[tokio::test]
+async fn subject_endpoint_returns_404() {
+    // spawn_app runs the app in the background
+    let address = spawn_app();
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&format!("{}/metadata/DOESNOTEXIST", &address))
+        .send()
+        .await
+        .expect("Failed to execute request.");
+
+    assert!(response.status().is_client_error());
+    assert_eq!(response.status().as_u16(), 404);
+    assert_eq!(Some(0), response.content_length());
+}
+
+#[tokio::test]
+async fn subject_endpoint_returns_200() {
+    // spawn_app runs the app in the background
+    let address = spawn_app();
+    let client = reqwest::Client::new();
+
+    let response = client
+        // hash must be from registry_data folder
+        .get(&format!("{}/metadata/782c158a98aed3aa676d9c85117525dcf3acc5506a30a8d87369fbcb4d6f6e6574", &address))
+        .send()
+        .await
+        .expect("Failed to execute request.");
+
+    assert!(response.status().is_success());
+    assert_eq!(response.status().as_u16(), 200);
+    // let body = response.text().await.unwrap();
+    //let p = PathBuf::from("../registry_data/782c158a98aed3aa676d9c85117525dcf3acc5506a30a8d87369fbcb4d6f6e6574.json");
+    //let mut json_file = File::open(p)?;
+    //let mut json = String::new();
+    //json_file.read_to_string(&mut json).unwrap();
+    //assert_eq!(json, body);
+}
 
 

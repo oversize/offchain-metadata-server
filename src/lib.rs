@@ -11,13 +11,11 @@ use serde_json;
 
 mod api;
 
-// Run creates the server and returns a Result of that try
-// Because creation of the server might fail during bind, where the ? indicates
-// the possibility of an error bubbling up
+// Run creates the server and returns a Result of that
 pub fn run(listener: TcpListener, mappings: PathBuf) -> Result<Server, std::io::Error> {
     let mut metadatas: HashMap<String, serde_json::Value> = HashMap::new();
     // let _testfile = std::path::Path::new("/Users/msch/src/rust/token-api-z2prod/fed1c459a47cbff56bd7d29c2dde0de3e9bd15cee02b98622fce82f743617264616e6f476f6c64.json");
-    println!("{:?}", mappings);
+    println!("mappings folder {:#?}", mappings);
     let paths = read_dir(&mappings).unwrap();
     for path in paths {
         let dir_entry = path.expect("File not found");
@@ -46,7 +44,6 @@ pub fn run(listener: TcpListener, mappings: PathBuf) -> Result<Server, std::io::
             .service(api::all_properties)
             .service(api::query)
         })
-        //.bind("127.0.0.1:8000")?
         .listen(listener)?
         .run();
 
