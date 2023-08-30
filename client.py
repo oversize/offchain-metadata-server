@@ -26,8 +26,8 @@ from pathlib import Path
 API_URL = os.getenv("TOKENAPI_URL", None)
 MAPPINGS = os.getenv("MAPPINGS", None)
 
-if not API_URL or not MAPPINGS:
-        sys.exit("Set env vars")
+#if not API_URL or not MAPPINGS:
+#        sys.exit("Set env vars")
 
 def all_properties():
     hashs = [f.stem for f in Path(MAPPINGS).glob("*.json")]
@@ -52,17 +52,27 @@ def all_properties():
 
 def batch_request_subjects():
     """Send Post Requests to
+
+    782c158a98aed3aa676d9c85117525dcf3acc5506a30a8d87369fbcb4d6f6e6574
+    fc4c6a1f2b159e3ea03259286de2061b8d3bc8d42dfb8a6105c5a9904357425443
+
     """
     _data = dict({
          "subjects": [
-              "782c158a98aed3aa676d9c85117525dcf3acc5506a30a8d87369fbcb4d6f6e6574",
-              "fc4c6a1f2b159e3ea03259286de2061b8d3bc8d42dfb8a6105c5a9904357425443"
-         ]
+            "986f0548a2fd9758bc2a38d698041debe89568749e20ab9b75a7f4b7444149",
+            "d6a8d8af07d704ba941aa1e4095cbb6968e45ccd3e70340867bf9b083138315261726f417a756c47656c6f",
+        ],
+        "properties": [
+            "subject",
+            "name",
+            "description"
+        ]
     })
+
     #url = "https://api.metadata.staging.cf-deployments.org/mainnet/metadata/query"
     #url = "https://tokens.cardano.org/metadata/query"
-    # url = "http://127.0.0.1:8081/metadata/query"
-    url = "https://tokens.dev.colo-primary.cf-systems.org/metadata/query"
+    url = "http://127.0.0.1:8081/metadata/query"
+    # url = "https://tokens.dev.colo-primary.cf-systems.org/metadata/query"
     print(url)
     rsp = requests.post(url, json=_data)
     print(f"{rsp.status_code} - {rsp.reason} - {rsp.request.headers}")
@@ -71,10 +81,13 @@ def batch_request_subjects():
         return
 
     data = json.loads(rsp.content)
+    print()
+    pprint(data)
+    return
     # Data must container one key 'subjects' that holds the list of subjects
     # stripped down to the properties that where send
     for s in data["subjects"]:
-        pprint(s.keys())
+        pprint(s)
         print(f'{s["name"]["value"]} -|- {s["description"]["value"]}')
 
 def single_property():

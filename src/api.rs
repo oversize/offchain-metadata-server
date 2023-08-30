@@ -1,33 +1,11 @@
 use actix_web::{get, post, web, HttpResponse, Responder};
 use serde::Deserialize;
-use serde_json;
+use serde_json::{self, Value};
 use std::collections::HashMap;
 use log;
 
 pub struct AppState {
     pub metadata: HashMap<String, serde_json::Value>,
-}
-
-struct _PreImage {
-    alg: String,
-    msg: String,
-}
-
-struct _MetaData {
-    subject: String,
-    policy: String,
-    name: String,
-    description: String,
-    ticker: String,
-    decimals: String,
-    url: String,
-    logo: String,
-}
-
-/// A query payload for the batch query endpoint
-#[derive(Deserialize)]
-pub struct Query {
-    subjects: Vec<String>,
 }
 
 #[get("/health")]
@@ -69,25 +47,62 @@ pub async fn some_property(
 ) -> impl Responder {
     let (subject, _name) = path.into_inner();
     let meta = data.metadata.get(&subject).expect("Could not find it ");
-    println!("{:#?}", meta);
-    todo!("Thats actually not finished yet");
+    log::debug!("{:#?}", meta);
     HttpResponse::Ok().json(meta)
+}
+
+/// A query payload for the batch query endpoint
+#[derive(Deserialize)]
+pub struct Query {
+    subjects: Vec<String>,
+    properties: Option<Vec<String>>
 }
 
 
 /// Endpoint for batch requesting multiple subjects at once
 ///
 /// If Content-Type is not 'application/json' return 415
+/// I am accepting serder_json::Value here because i currently dont know
+/// how to provide the struct type with optional values (properties might or
+/// might not be in the payload). And if its in the struct but not in
+/// the request the request fails -> bad request, coz its missing.
+///
+/// Given the simplicity of the pazload however, its ok to deal with it in the
+/// handler manually though.
 #[post("/metadata/query")]
 pub async fn query(payload: web::Json<Query>, data: web::Data<AppState>) -> impl Responder {
     println!("{:#?}", payload.subjects);
-    let mut subjects: Vec<serde_json::Value> = Vec::new();
-
-    //println!("{:#?}", payload.properties);
+    let mut subjects: Vec<Value> = Vec::new();
     for subject in payload.subjects.iter() {
-        let meta = data.metadata.get(subject).expect("Could not find it ");
-        subjects.push(meta.to_owned())
+        log::debug!("subject into vec");
+        let subj = data.metadata.get(subject);
+        if subj.is_some() {
+            let subj = subj.unwrap();
+            // Either return whole thing or only fields given by properties
+            if payload.properties.is_none() {
+                subjects.push(subj.to_owned());
+            } else {
+                let props = payload.properties.as_ref().unwrap();
+                let mut newsubj: HashMap<&String, &Value> = HashMap::new();
+                for p in props.iter() {
+                    let value = subj.get(p);
+                    if value.is_some() {
+                        newsubj.insert(p, value.unwrap());
+                    }
+                }
+                subjects.push(serde_json::json!(newsubj));
+                // Only parse out the fields given in properties
+            }
+        } else {
+            log::info!("No data found for {}", subject);
+        }
     }
+
+    // let mut subjects: Vec<serde_json::Value> = Vec::new();
+    //for subject in subjects.iter() {
+    //    let meta = data.metadata.get(subject).expect("Could not find it ");
+    //    subjects.push(meta.to_owned())
+    //}
     let out = serde_json::json!({
         "subjects": subjects
     });
