@@ -1,11 +1,16 @@
 use actix_web::{get, post, web, HttpResponse, Responder};
+use log;
 use serde::Deserialize;
 use serde_json::{self, Value};
 use std::collections::HashMap;
-use log;
 
+#[derive(Clone)]
 pub struct AppState {
-    pub metadata: HashMap<String, serde_json::Value>,
+    pub mappings: HashMap<String, serde_json::Value>,
+}
+
+pub struct _AppMutState<'a> {
+    pub mappings: &'a HashMap<String, serde_json::Value>,
 }
 
 #[get("/health")]
@@ -16,22 +21,25 @@ pub async fn health() -> impl Responder {
 
 /// Endpoint to retrieve a single subject
 #[get("/metadata/{subject}")]
-pub async fn single_subject(path: web::Path<String>, data: web::Data<AppState>) -> impl Responder {
+pub async fn single_subject(
+    path: web::Path<String>,
+    app_data: web::Data<AppState>,
+) -> impl Responder {
     // Extract subject from path
     let subject = path.into_inner();
-    match data.metadata.get(&subject) {
+    //let mappings = app_data.mappings;//.lock().expect("Error acquiring mutex lock");
+    match app_data.mappings.get(&subject) {
         Some(d) => {
-            // todo: this may panic!
             let name = d.get("name").unwrap().get("value").unwrap();
             log::debug!("Found {} for {}", name, subject);
             return HttpResponse::Ok().json(d);
-        },
+        }
         None => {
             log::debug!("Nothing found for {}", subject);
             return HttpResponse::NotFound().body("");
         }
     };
-   }
+}
 
 /// Endpoint to retrieve all porperty names for a given subject
 #[get("/metadata/{subject}/properties")]
@@ -43,10 +51,11 @@ pub async fn all_properties() -> impl Responder {
 #[get("/metadata/{subject}/property/{name}")]
 pub async fn some_property(
     path: web::Path<(String, String)>,
-    data: web::Data<AppState>,
+    app_data: web::Data<AppState>,
 ) -> impl Responder {
     let (subject, _name) = path.into_inner();
-    let meta = data.metadata.get(&subject).expect("Could not find it ");
+    //let mappings = app_data.mappings.lock().expect("Error acquiring mutex lock");
+    let meta = app_data.mappings.get(&subject).expect("Could not find it ");
     log::debug!("{:#?}", meta);
     HttpResponse::Ok().json(meta)
 }
@@ -55,9 +64,8 @@ pub async fn some_property(
 #[derive(Deserialize)]
 pub struct Query {
     subjects: Vec<String>,
-    properties: Option<Vec<String>>
+    properties: Option<Vec<String>>,
 }
-
 
 /// Endpoint for batch requesting multiple subjects at once
 ///
@@ -70,12 +78,17 @@ pub struct Query {
 /// Given the simplicity of the pazload however, its ok to deal with it in the
 /// handler manually though.
 #[post("/metadata/query")]
-pub async fn query(payload: web::Json<Query>, data: web::Data<AppState>) -> impl Responder {
+pub async fn query(
+    payload: web::Json<Query>,
+    app_data: web::Data<AppState>,
+) -> impl Responder {
     println!("{:#?}", payload.subjects);
     let mut subjects: Vec<Value> = Vec::new();
+    //let mappings = app_data.mappings.lock().expect("Error acquiring mutex lock");
+
     for subject in payload.subjects.iter() {
         log::debug!("subject into vec");
-        let subj = data.metadata.get(subject);
+        let subj = app_data.mappings.get(subject);
         if subj.is_some() {
             let subj = subj.unwrap();
             // Either return whole thing or only fields given by properties

@@ -1,8 +1,8 @@
 //! tests/health_check.rs
-use tokenapi;
+use std::collections::HashMap;
 use std::net::TcpListener;
 use std::path::PathBuf;
-use std::collections::HashMap;
+use tokenapi;
 
 // spawn_app runs the application in the background so we can run tests
 // against it. Should that server fail to create there is no need to
@@ -11,8 +11,7 @@ use std::collections::HashMap;
 // That is usefull in the individual tests, to give the client an address
 // to work against.
 fn spawn_app() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .expect("Failed to bind random port");
+    let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind random port");
     let port = listener.local_addr().unwrap().port();
     let ip = listener.local_addr().unwrap().ip();
     let mappings = PathBuf::from("./registry_data");
@@ -70,7 +69,10 @@ async fn subject_endpoint_returns_200() {
 
     let response = client
         // hash must be from registry_data folder
-        .get(&format!("{}/metadata/782c158a98aed3aa676d9c85117525dcf3acc5506a30a8d87369fbcb4d6f6e6574", &address))
+        .get(&format!(
+            "{}/metadata/782c158a98aed3aa676d9c85117525dcf3acc5506a30a8d87369fbcb4d6f6e6574",
+            &address
+        ))
         .send()
         .await
         .expect("Failed to execute request.");
@@ -85,13 +87,11 @@ async fn subject_endpoint_returns_200() {
     //assert_eq!(json, body);
 }
 
-
-
 #[tokio::test]
 async fn query_endpoints_returns_400() {
     struct QueryPayload {
         subjects: Vec<String>,
-        properties: Option<Vec<String>>
+        properties: Option<Vec<String>>,
     }
     let address = spawn_app();
 
@@ -118,5 +118,3 @@ async fn query_endpoints_returns_400() {
     assert!(response.status().is_client_error());
     assert_eq!(response.status().as_u16(), 400);
 }
-
-

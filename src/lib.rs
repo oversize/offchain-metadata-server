@@ -1,22 +1,25 @@
+use actix_web::{App, HttpServer, Result};
+use std::collections::HashMap;
+use std::fs::read_dir;
 use std::net::TcpListener;
 use std::path::PathBuf;
-use std::fs::read_dir;
-use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Mutex;
 
-use actix_web::middleware::Logger;
-use actix_web::{web, App, HttpServer};
 use actix_web::dev::Server;
+use actix_web::middleware::Logger;
+use actix_web::web;
+use log;
 use serde_json;
+use tokio::spawn;
+use tokio_schedule::{every, Job};
 
 mod api;
+mod scheduler;
 
-// Run creates the server and returns a Result of that
-pub fn run(listener: TcpListener, mappings: PathBuf) -> Result<Server, std::io::Error> {
-    let mut metadatas: HashMap<String, serde_json::Value> = HashMap::new();
-    // let _testfile = std::path::Path::new("/Users/msch/src/rust/token-api-z2prod/fed1c459a47cbff56bd7d29c2dde0de3e9bd15cee02b98622fce82f743617264616e6f476f6c64.json");
-    println!("mappings folder {:#?}", mappings);
-    let paths = read_dir(&mappings).unwrap();
+fn read_mappings(registry_path: PathBuf, mappings: &mut HashMap<String, serde_json::Value>) {
+    let paths = read_dir(&registry_path).unwrap();
+    //let mut mappings = mappings.lock().expect("Error acquiring mutex lock");
     for path in paths {
         let dir_entry = path.expect("File not found");
         let path = dir_entry.path();
@@ -25,17 +28,33 @@ pub fn run(listener: TcpListener, mappings: PathBuf) -> Result<Server, std::io::
         let stem_str = stem_path.to_str().unwrap();
         let key = String::from_str(stem_str).unwrap();
         //println!("key {:#?}", key);
-        let metadata_json:serde_json::Value = serde_json::from_str(&json_data).expect("JSON invalid");
-        metadatas.insert(key, metadata_json);
+        let json_data: serde_json::Value = serde_json::from_str(&json_data).expect("JSON invalid");
+        mappings.insert(key, json_data);
     }
+    log::info!("Read {} items", mappings.len());
+}
+
+// Run creates the server and returns a Result of that
+pub fn run(listener: TcpListener, registry_path: PathBuf) -> Result<Server, std::io::Error> {
+    let mut mappings: HashMap<String, serde_json::Value> = HashMap::new();
+    read_mappings(registry_path, &mut mappings);
+    let every_30_seconds = every(3)
+        .seconds() // by default chrono::Local timezone
+        .perform(|| async {
+            println!("Every minute at 00'th and 30'th second");
+            //read_mappings(registry_path, &mut mappings);
+        });
+    spawn(every_30_seconds);
+    // let app_data = web::Data::new(api::AppState { metadata: mappings });
+    let app_data = web::Data::new(api::AppState {
+        mappings: mappings.clone(),
+    });
 
     let server = HttpServer::new(move || {
         App::new()
             // Sharing the state with the handler
-            .app_data(web::Data::new(api::AppState {
-                metadata: metadatas.clone()
-            })) // add shared state
-
+            // .app_data(app_data.clone())
+            .app_data(app_data.clone())
             // Logger is a middleware that logs the requests, but its the env_logger
             // crate that writes them to stdout!
             .wrap(Logger::default())
@@ -43,10 +62,9 @@ pub fn run(listener: TcpListener, mappings: PathBuf) -> Result<Server, std::io::
             .service(api::single_subject)
             .service(api::all_properties)
             .service(api::query)
-        })
-        .listen(listener)?
-        .run();
+    })
+    .listen(listener)?
+    .run();
 
-    Ok(server)
+    return Ok(server);
 }
-

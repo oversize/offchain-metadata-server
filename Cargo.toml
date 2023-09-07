@@ -14,13 +14,15 @@ name = "tokenapi"
 
 [dependencies]
 actix-web = "4"
+actix-rt = "1.1.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 serde = { version = "1.0.104", features = ["derive"] }
 serde_json = "1.0.48"
 actix-settings = "0.6.0"
 env_logger = "0.9"
 log = "0.4"
-
+chrono = "0.4.28"
+tokio_schedule = "0.3.1"
 
 [dev-dependencies]
 reqwest = "0.11"
