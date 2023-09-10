@@ -4,18 +4,14 @@ use std::fs::read_dir;
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::Mutex;
 
 use actix_web::dev::Server;
 use actix_web::middleware::Logger;
 use actix_web::web;
 use log;
 use serde_json;
-use tokio::spawn;
-use tokio_schedule::{every, Job};
 
 mod api;
-mod scheduler;
 
 fn read_mappings(registry_path: PathBuf, mappings: &mut HashMap<String, serde_json::Value>) {
     let paths = read_dir(&registry_path).unwrap();
@@ -38,13 +34,13 @@ fn read_mappings(registry_path: PathBuf, mappings: &mut HashMap<String, serde_js
 pub fn run(listener: TcpListener, registry_path: PathBuf) -> Result<Server, std::io::Error> {
     let mut mappings: HashMap<String, serde_json::Value> = HashMap::new();
     read_mappings(registry_path, &mut mappings);
-    let every_30_seconds = every(3)
-        .seconds() // by default chrono::Local timezone
-        .perform(|| async {
-            println!("Every minute at 00'th and 30'th second");
-            //read_mappings(registry_path, &mut mappings);
-        });
-    spawn(every_30_seconds);
+    //let every_30_seconds = every(3)
+    //    .seconds() // by default chrono::Local timezone
+    //    .perform(|| async {
+    //        println!("Every minute at 00'th and 30'th second");
+    //        //read_mappings(registry_path, &mut mappings);
+    //    });
+    //spawn(every_30_seconds);
     // let app_data = web::Data::new(api::AppState { metadata: mappings });
     let app_data = web::Data::new(api::AppState {
         mappings: mappings.clone(),
