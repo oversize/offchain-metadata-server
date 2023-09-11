@@ -15,7 +15,6 @@ mod api;
 
 fn read_mappings(registry_path: PathBuf, mappings: &mut HashMap<String, serde_json::Value>) {
     let paths = read_dir(&registry_path).unwrap();
-    //let mut mappings = mappings.lock().expect("Error acquiring mutex lock");
     for path in paths {
         let dir_entry = path.expect("File not found");
         let path = dir_entry.path();
@@ -23,7 +22,6 @@ fn read_mappings(registry_path: PathBuf, mappings: &mut HashMap<String, serde_js
         let stem_path = path.file_stem().unwrap();
         let stem_str = stem_path.to_str().unwrap();
         let key = String::from_str(stem_str).unwrap();
-        //println!("key {:#?}", key);
         let json_data: serde_json::Value = serde_json::from_str(&json_data).expect("JSON invalid");
         mappings.insert(key, json_data);
     }
