@@ -1,9 +1,11 @@
 use actix_web::{App, HttpServer, Result};
 use std::collections::HashMap;
 use std::fs::read_dir;
+use std::str::FromStr;
 use std::net::TcpListener;
 use std::path::PathBuf;
-use std::str::FromStr;
+
+use std::sync::{Arc, Mutex};
 
 use actix_web::dev::Server;
 use actix_web::middleware::Logger;
@@ -13,35 +15,17 @@ use serde_json;
 
 mod api;
 
-fn read_mappings(registry_path: PathBuf, mappings: &mut HashMap<String, serde_json::Value>) {
-    let paths = read_dir(&registry_path).unwrap();
-    for path in paths {
-        let dir_entry = path.expect("File not found");
-        let path = dir_entry.path();
-        let json_data = std::fs::read_to_string(&path).expect("Json invalid");
-        let stem_path = path.file_stem().unwrap();
-        let stem_str = stem_path.to_str().unwrap();
-        let key = String::from_str(stem_str).unwrap();
-        let json_data: serde_json::Value = serde_json::from_str(&json_data).expect("JSON invalid");
-        mappings.insert(key, json_data);
-    }
-    log::info!("Read {} items", mappings.len());
-}
 
 // Run creates the server and returns a Result of that
-pub fn run(listener: TcpListener, registry_path: PathBuf) -> Result<Server, std::io::Error> {
-    let mut mappings: HashMap<String, serde_json::Value> = HashMap::new();
-    read_mappings(registry_path, &mut mappings);
-    //let every_30_seconds = every(3)
-    //    .seconds() // by default chrono::Local timezone
-    //    .perform(|| async {
-    //        println!("Every minute at 00'th and 30'th second");
-    //        //read_mappings(registry_path, &mut mappings);
-    //    });
-    //spawn(every_30_seconds);
-    // let app_data = web::Data::new(api::AppState { metadata: mappings });
-    let app_data = web::Data::new(api::AppState {
-        mappings: mappings.clone(),
+pub fn run(listener: TcpListener, _registry_path: PathBuf) -> Result<Server, std::io::Error> {
+    let mappings: Arc<Mutex<HashMap<String, serde_json::Value>>> = Arc::new(Mutex::new(HashMap::new()));
+    let registry_path = "/Users/msch/src/cf/cardano-token-registry/mappings";
+    api::read_mappings(registry_path, mappings.clone());
+
+    let app_data = web::Data::new(
+        api::AppMutState {
+            mappings: mappings.clone(),
+            registry_path
     });
 
     let server = HttpServer::new(move || {
@@ -55,6 +39,7 @@ pub fn run(listener: TcpListener, registry_path: PathBuf) -> Result<Server, std:
             .service(api::health)
             .service(api::single_subject)
             .service(api::all_properties)
+            .service(api::pong)
             .service(api::query)
     })
     .listen(listener)?

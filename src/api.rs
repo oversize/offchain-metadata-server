@@ -1,16 +1,24 @@
-use actix_web::{get, post, web, HttpResponse, Responder};
+use std::collections::HashMap;
+use std::env;
+use std::fs::read_dir;
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::{Arc, Mutex};
+
 use log;
+
+use actix_web::{get, post, web, HttpResponse, Responder};
 use serde::Deserialize;
 use serde_json::{self, Value};
-use std::collections::HashMap;
 
 #[derive(Clone)]
-pub struct AppState {
+pub struct _AppState {
     pub mappings: HashMap<String, serde_json::Value>,
 }
 
-pub struct _AppMutState<'a> {
-    pub mappings: &'a HashMap<String, serde_json::Value>,
+pub struct AppMutState<'a> {
+    pub mappings: Arc<Mutex<HashMap<String, serde_json::Value>>>,
+    pub registry_path: &'a str,
 }
 
 #[get("/health")]
@@ -19,16 +27,36 @@ pub async fn health() -> impl Responder {
     HttpResponse::Ok()
 }
 
+pub fn read_mappings(
+    registry_path: &str,
+    mappings: Arc<Mutex<HashMap<String, serde_json::Value>>>,
+) {
+    let paths = read_dir(PathBuf::from_str(&registry_path).unwrap()).unwrap();
+    let mut mtx = mappings.lock().expect("Error acquiring mutex lock");
+    for path in paths {
+        let dir_entry = path.expect("File not found");
+        let path = dir_entry.path();
+        let json_data = std::fs::read_to_string(&path).expect("Json invalid");
+        let stem_path = path.file_stem().unwrap();
+        let stem_str = stem_path.to_str().unwrap();
+        let key = String::from_str(stem_str).unwrap();
+        //println!("key {:#?}", key);
+        let json_data: serde_json::Value = serde_json::from_str(&json_data).expect("JSON invalid");
+        mtx.insert(key, json_data);
+    }
+    log::info!("Read {} items", mtx.len());
+}
+
 /// Endpoint to retrieve a single subject
 #[get("/metadata/{subject}")]
 pub async fn single_subject(
     path: web::Path<String>,
-    app_data: web::Data<AppState>,
+    app_data: web::Data<AppMutState<'_>>,
 ) -> impl Responder {
     // Extract subject from path
     let subject = path.into_inner();
     //let mappings = app_data.mappings;//.lock().expect("Error acquiring mutex lock");
-    match app_data.mappings.get(&subject) {
+    match app_data.mappings.lock().expect("Error").get(&subject) {
         Some(d) => {
             let name = d.get("name").unwrap().get("value").unwrap();
             log::debug!("Found {} for {}", name, subject);
@@ -51,13 +79,24 @@ pub async fn all_properties() -> impl Responder {
 #[get("/metadata/{subject}/property/{name}")]
 pub async fn some_property(
     path: web::Path<(String, String)>,
-    app_data: web::Data<AppState>,
+    app_data: web::Data<AppMutState<'_>>,
 ) -> impl Responder {
     let (subject, _name) = path.into_inner();
-    //let mappings = app_data.mappings.lock().expect("Error acquiring mutex lock");
-    let meta = app_data.mappings.get(&subject).expect("Could not find it ");
+    let mtx = app_data
+        .mappings
+        .lock()
+        .expect("Error acquiring mutex lock");
+    let meta = mtx.get(&subject).expect("Could not find it ");
     log::debug!("{:#?}", meta);
     HttpResponse::Ok().json(meta)
+}
+
+/// Endpoint to trigger update of the data
+#[get("/pong")]
+pub async fn pong(app_data: web::Data<AppMutState<'_>>) -> impl Responder {
+    // let registry_path = PathBuf::from_str("/Users/msch/src/cf/cardano-token-registry/mappings").expect("Doh'");
+    read_mappings(app_data.registry_path, app_data.mappings.clone());
+    HttpResponse::Ok()
 }
 
 /// A query payload for the batch query endpoint
@@ -78,17 +117,15 @@ pub struct Query {
 /// Given the simplicity of the pazload however, its ok to deal with it in the
 /// handler manually though.
 #[post("/metadata/query")]
-pub async fn query(
-    payload: web::Json<Query>,
-    app_data: web::Data<AppState>,
-) -> impl Responder {
+pub async fn query(payload: web::Json<Query>, app_data: web::Data<AppMutState<'_>>) -> impl Responder {
     println!("{:#?}", payload.subjects);
     let mut subjects: Vec<Value> = Vec::new();
     //let mappings = app_data.mappings.lock().expect("Error acquiring mutex lock");
 
     for subject in payload.subjects.iter() {
         log::debug!("subject into vec");
-        let subj = app_data.mappings.get(subject);
+        let mtx = app_data.mappings.lock().expect("Erro");
+        let subj = mtx.get(subject);
         if subj.is_some() {
             let subj = subj.unwrap();
             // Either return whole thing or only fields given by properties

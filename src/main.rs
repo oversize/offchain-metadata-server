@@ -14,8 +14,9 @@ async fn main() -> Result<(), std::io::Error> {
     env_logger::Builder::from_env(Env::default().default_filter_or("debug")).init();
 
     let registry_path = PathBuf::from(env::var("MAPPINGS").expect("You need to set MAPPINGS"));
-    let listen_address = env::var("LISTEN").expect("You need to set LISTEN to e.g. 0.0.0.0:8000");
-    let listener = TcpListener::bind(listen_address).expect(&format!("Failed to bind to {:?}", env::var("LISTEN")));
+    let listen_address = env::var("LISTEN").expect("You need to set LISTEN");
+    let listener = TcpListener::bind(listen_address)
+        .expect(&format!("Failed to bind to {:?}", env::var("LISTEN")));
 
     run(listener, registry_path)?.await
 }

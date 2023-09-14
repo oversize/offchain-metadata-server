@@ -26,3 +26,9 @@ tokio_schedule = "0.3.1"
 
 [dev-dependencies]
 reqwest = "0.11"
+
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
+panic = "abort"
