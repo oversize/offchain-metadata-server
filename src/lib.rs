@@ -3,7 +3,7 @@ use std::collections::HashMap;
 //use std::fs::read_dir;
 //use std::str::FromStr;
 use std::net::TcpListener;
-use std::path::PathBuf;
+// use std::path::PathBuf;
 
 use std::sync::{Arc, Mutex};
 
@@ -17,15 +17,14 @@ mod api;
 
 
 // Run creates the server and returns a Result of that
-pub fn run(listener: TcpListener, _registry_path: PathBuf) -> Result<Server, std::io::Error> {
+pub fn run(listener: TcpListener, registry_path: String) -> Result<Server, std::io::Error> {
     let mappings: Arc<Mutex<HashMap<String, serde_json::Value>>> = Arc::new(Mutex::new(HashMap::new()));
-    let registry_path = "/Users/msch/src/cf/cardano-token-registry/mappings";
-    api::read_mappings(registry_path, mappings.clone());
+    api::read_mappings(registry_path.clone(), mappings.clone());
 
     let app_data = web::Data::new(
         api::AppMutState {
             mappings: mappings.clone(),
-            registry_path
+            registry_path: registry_path.clone()
     });
 
     let server = HttpServer::new(move || {

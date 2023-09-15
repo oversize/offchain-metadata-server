@@ -8,15 +8,17 @@ use std::fs::read_dir;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+// use std::error::Error;
+// use std::io::Error;
 
 #[derive(Clone)]
 pub struct _AppState {
     pub mappings: HashMap<String, serde_json::Value>,
 }
 
-pub struct AppMutState<'a> {
+pub struct AppMutState {
     pub mappings: Arc<Mutex<HashMap<String, serde_json::Value>>>,
-    pub registry_path: &'a str,
+    pub registry_path: String,
 }
 
 #[get("/health")]
@@ -25,14 +27,17 @@ pub async fn health() -> impl Responder {
     HttpResponse::Ok()
 }
 
+/// Funcion that reads the files in registry_path and updates the mappings
+/// This function should add better error handling by returning a result so
+/// the views can act accordingly
 pub fn read_mappings(
-    registry_path: &str,
+    registry_path: String,
     mappings: Arc<Mutex<HashMap<String, serde_json::Value>>>,
 ) {
     let paths = read_dir(PathBuf::from_str(&registry_path).unwrap()).unwrap();
     let mut mtx = mappings.lock().expect("Error acquiring mutex lock");
     for path in paths {
-        let dir_entry = path.expect("File not found");
+        let dir_entry = path.expect("Path invalid");
         let path = dir_entry.path();
         let json_data = std::fs::read_to_string(&path).expect("Json invalid");
         let stem_path = path.file_stem().unwrap();
@@ -49,7 +54,7 @@ pub fn read_mappings(
 #[get("/metadata/{subject}")]
 pub async fn single_subject(
     path: web::Path<String>,
-    app_data: web::Data<AppMutState<'_>>,
+    app_data: web::Data<AppMutState>,
 ) -> impl Responder {
     let subject = path.into_inner();
     //let mappings = app_data.mappings;//.lock().expect("Error acquiring mutex lock");
@@ -65,11 +70,13 @@ pub async fn single_subject(
 }
 
 /// Endpoint to retrieve all porperty names for a given subject
-///
+/// While the CIP says it should return a list of strings that are the properties
+/// of given subject, the currently live implementation does not do that.
+/// So this view will do the same (as does the implementation i am trying to replace)
 #[get("/metadata/{subject}/properties")]
 pub async fn all_properties(
     path: web::Path<String>,
-    app_data: web::Data<AppMutState<'_>>,
+    app_data: web::Data<AppMutState>,
 ) -> impl Responder {
     let subject = path.into_inner();
     let mtx = app_data
@@ -78,16 +85,11 @@ pub async fn all_properties(
         .expect("Error acquiring mutex lock");
     match mtx.get(&subject) {
         Some(d) => {
-            // d is the serde_value
-            let a = d.as_array();
-            println!("{:?}", a);
-            let name = d.get("name").unwrap().get("value").unwrap();
-            log::debug!("Found {} for {}", name, subject);
-
+            log::debug!("Found Value for {}", subject);
             return HttpResponse::Ok().json(d);
         }
         None => {
-            log::debug!("Nothing found for {}", subject);
+            log::debug!("No Value found for {}", subject);
             return HttpResponse::NotFound().body("");
         }
     };
@@ -101,7 +103,7 @@ pub async fn all_properties(
 #[get("/metadata/{subject}/properties/{name}")]
 pub async fn some_property(
     path: web::Path<(String, String)>,
-    app_data: web::Data<AppMutState<'_>>,
+    app_data: web::Data<AppMutState>,
 ) -> impl Responder {
     let (subject, _name) = path.into_inner();
     let mtx = app_data
@@ -115,61 +117,67 @@ pub async fn some_property(
 
 /// Endpoint to trigger update of the data
 #[get("/pong")]
-pub async fn pong(app_data: web::Data<AppMutState<'_>>) -> impl Responder {
-    // let registry_path = PathBuf::from_str("/Users/msch/src/cf/cardano-token-registry/mappings").expect("Doh'");
-    read_mappings(app_data.registry_path, app_data.mappings.clone());
+pub async fn pong(app_data: web::Data<AppMutState>) -> impl Responder {
+    read_mappings(app_data.registry_path.clone(), app_data.mappings.clone());
     HttpResponse::Ok()
 }
 
 /// A query payload for the batch query endpoint
 #[derive(Deserialize)]
-pub struct Query {
+pub struct Query{
     subjects: Vec<String>,
     properties: Option<Vec<String>>,
 }
 
 /// Endpoint for batch requesting multiple subjects at once
-///
-/// If Content-Type is not 'application/json' return 415
-/// I am accepting serder_json::Value here because i currently dont know
-/// how to provide the struct type with optional values (properties might or
-/// might not be in the payload). And if its in the struct but not in
-/// the request the request fails -> bad request, coz its missing.
-///
-/// Given the simplicity of the pazload however, its ok to deal with it in the
-/// handler manually though.
+/// If the payload holds 'properties' the subject should be narrowed down
+/// to only these properties
 #[post("/metadata/query")]
 pub async fn query(
     payload: web::Json<Query>,
-    app_data: web::Data<AppMutState<'_>>,
+    app_data: web::Data<AppMutState>,
 ) -> impl Responder {
-    println!("{:#?}", payload.subjects);
+    // subjects holds subjects that where requests and should be returned
     let mut subjects: Vec<Value> = Vec::new();
-    //let mappings = app_data.mappings.lock().expect("Error acquiring mutex lock");
+    let mtx = app_data
+        .mappings
+        .lock()
+        .expect("Error acquiring mutex lock");
+    // Grab ref to properties so we can use it throughout the for loop below
+    let properties = payload.properties.clone();
+    log::debug!("Requested {} subjects", payload.subjects.len());
+    if properties.is_some() {
+        // as_ref() temporary references properties, so its not actually moved
+        log::debug!("   with {} properties", properties.as_ref().unwrap().len());
+    }
 
     for subject in payload.subjects.iter() {
-        log::debug!("subject into vec");
-        let mtx = app_data.mappings.lock().expect("Erro");
-        let subj = mtx.get(subject);
-        if subj.is_some() {
-            let subj = subj.unwrap();
-            // Either return whole thing or only fields given by properties
-            if payload.properties.is_none() {
-                subjects.push(subj.to_owned());
-            } else {
-                let props = payload.properties.as_ref().unwrap();
-                let mut newsubj: HashMap<&String, &Value> = HashMap::new();
-                for p in props.iter() {
-                    let value = subj.get(p);
-                    if value.is_some() {
-                        newsubj.insert(p, value.unwrap());
+        // Find subject in mappings or do nothing
+        match mtx.get(subject) {
+            Some(subj) => {
+                // If there are properties given in the payload, only return
+                // these for each subject, if not return the whole subject
+                match &properties {
+                    Some(props) => {
+                        // Build a new subject only with given properties
+                        let mut newsubj: HashMap<&str, &Value> = HashMap::new();
+                        for p in props.iter() {
+                            let value = subj.get(p);
+                            if value.is_some() {
+                                newsubj.insert(p, value.unwrap());
+                            }
+                        }
+                        subjects.push(serde_json::json!(newsubj));
+                    },
+                    None => {
+                        // There are no properties given, return whole subject
+                        subjects.push(subj.clone());
                     }
                 }
-                subjects.push(serde_json::json!(newsubj));
-                // Only parse out the fields given in properties
+            },
+            None => {
+                log::debug!("Subject not found {}", subject);
             }
-        } else {
-            log::info!("No data found for {}", subject);
         }
     }
 

@@ -66,11 +66,13 @@ def batch_request_subjects():
          "subjects": [
             "986f0548a2fd9758bc2a38d698041debe89568749e20ab9b75a7f4b7444149",
             "d6a8d8af07d704ba941aa1e4095cbb6968e45ccd3e70340867bf9b083138315261726f417a756c47656c6f",
+            "782c158a98aed3aa676d9c85117525dcf3acc5506a30a8d87369fbcb4d6f6e6574",
+            "fc4c6a1f2b159e3ea03259286de2061b8d3bc8d42dfb8a6105c5a9904357425443"
         ],
         "properties": [
             "subject",
             "name",
-            "description"
+            "description",
         ]
     })
 
@@ -143,9 +145,9 @@ def single_subject():
 
 def main():
     #all_properties()
-    #batch_request_subjects()
+    batch_request_subjects()
     # single_property()
-    single_subject()
+    #single_subject()
 
 
 if __name__ == '__main__':
