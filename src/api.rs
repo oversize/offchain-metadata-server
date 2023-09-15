@@ -1,15 +1,13 @@
+use actix_web::{get, post, web, HttpResponse, Responder};
+use log;
+use serde::Deserialize;
+use serde_json::{self, Value};
 use std::collections::HashMap;
-use std::env;
+// use std::env;
 use std::fs::read_dir;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-
-use log;
-
-use actix_web::{get, post, web, HttpResponse, Responder};
-use serde::Deserialize;
-use serde_json::{self, Value};
 
 #[derive(Clone)]
 pub struct _AppState {
@@ -53,13 +51,10 @@ pub async fn single_subject(
     path: web::Path<String>,
     app_data: web::Data<AppMutState<'_>>,
 ) -> impl Responder {
-    // Extract subject from path
     let subject = path.into_inner();
     //let mappings = app_data.mappings;//.lock().expect("Error acquiring mutex lock");
     match app_data.mappings.lock().expect("Error").get(&subject) {
         Some(d) => {
-            let name = d.get("name").unwrap().get("value").unwrap();
-            log::debug!("Found {} for {}", name, subject);
             return HttpResponse::Ok().json(d);
         }
         None => {
@@ -70,13 +65,40 @@ pub async fn single_subject(
 }
 
 /// Endpoint to retrieve all porperty names for a given subject
+///
 #[get("/metadata/{subject}/properties")]
-pub async fn all_properties() -> impl Responder {
-    HttpResponse::Ok()
+pub async fn all_properties(
+    path: web::Path<String>,
+    app_data: web::Data<AppMutState<'_>>,
+) -> impl Responder {
+    let subject = path.into_inner();
+    let mtx = app_data
+        .mappings
+        .lock()
+        .expect("Error acquiring mutex lock");
+    match mtx.get(&subject) {
+        Some(d) => {
+            // d is the serde_value
+            let a = d.as_array();
+            println!("{:?}", a);
+            let name = d.get("name").unwrap().get("value").unwrap();
+            log::debug!("Found {} for {}", name, subject);
+
+            return HttpResponse::Ok().json(d);
+        }
+        None => {
+            log::debug!("Nothing found for {}", subject);
+            return HttpResponse::NotFound().body("");
+        }
+    };
 }
 
 /// Endpoint to retrieve a specific property value for a given subject
-#[get("/metadata/{subject}/property/{name}")]
+/// The CIP Recommended /metadata/SUBJECT/property/NAME
+/// But both other impementations have chosen to pick /metadata/SUBJECT/properties/NAME
+/// https://tokens.cardano.org/metadata/5c4f08f47124b8e7ce9a4d0a00a5939da624cf6e533e1dc9de9b49c5556e636c6542656e6e793630/properties/logo
+///
+#[get("/metadata/{subject}/properties/{name}")]
 pub async fn some_property(
     path: web::Path<(String, String)>,
     app_data: web::Data<AppMutState<'_>>,
@@ -117,7 +139,10 @@ pub struct Query {
 /// Given the simplicity of the pazload however, its ok to deal with it in the
 /// handler manually though.
 #[post("/metadata/query")]
-pub async fn query(payload: web::Json<Query>, app_data: web::Data<AppMutState<'_>>) -> impl Responder {
+pub async fn query(
+    payload: web::Json<Query>,
+    app_data: web::Data<AppMutState<'_>>,
+) -> impl Responder {
     println!("{:#?}", payload.subjects);
     let mut subjects: Vec<Value> = Vec::new();
     //let mappings = app_data.mappings.lock().expect("Error acquiring mutex lock");

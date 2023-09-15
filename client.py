@@ -2,13 +2,18 @@
 """Super simple script to just hammer the api with requests.
 For now i just wanted to throw all kinds of valid request against it.
 
-In order to use this you will  need to have the following packages availble.
-This is a rust project so i wanted to keep the python part simple and
-just document here. Create a venv and install dependencies:
+IOGs Api
+https://tokens.cardano.org/
 
-    python3 -m venv .venv
-    source .venv/bin/activate
-    pip install reque
+CFs API:
+https://api.metadata.staging.cf-deployments.org/
+https://api.metadata.staging.cf-deployments.org/apidocs
+
+
+My idea is to write requests and verify that the apis provide the same
+output as my rust implementation does.
+
+
 
 """
 import os
@@ -108,10 +113,39 @@ def single_property():
     # Data must container one key 'subjects' that holds the list of subjects
     # stripped down to the properties that where send
 
+def single_subject():
+    subject = "fc4c6a1f2b159e3ea03259286de2061b8d3bc8d42dfb8a6105c5a9904357425443"
+
+    url = f"http://127.0.0.1:8081/metadata/{subject}"
+    rsp1 = requests.get(url)
+    if not rsp1.status_code == 200:
+        return
+    data1 = json.loads(rsp1.content)
+
+    url = f"https://api.metadata.staging.cf-deployments.org/mainnet/metadata/{subject}"
+    rsp2 = requests.get(url)
+    if not rsp2.status_code == 200:
+        return
+    data2 = json.loads(rsp2.content)
+    del data2["additionalProperties"]
+
+    assert data1 == data2
+
+    url = f"https://tokens.cardano.org/metadata/{subject}"
+    rsp3 = requests.get(url)
+    if not rsp3.status_code == 200:
+        return
+    data3 = json.loads(rsp3.content)
+
+    assert data1 == data3
+
+
+
 def main():
     #all_properties()
-    batch_request_subjects()
+    #batch_request_subjects()
     # single_property()
+    single_subject()
 
 
 if __name__ == '__main__':
