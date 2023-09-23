@@ -1,21 +1,17 @@
-use actix_web::{get, post, web, HttpResponse, Responder};
-use log;
-use serde::Deserialize;
-use serde_json::{self, Value};
 use std::collections::HashMap;
-// use std::env;
 use std::fs::read_dir;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-// use std::error::Error;
-// use std::io::Error;
+
+use actix_web::{get, post, web, HttpResponse, Responder};
+
+use serde::Deserialize;
+use serde_json::{self, Value};
+
+use log;
 
 #[derive(Clone)]
-pub struct _AppState {
-    pub mappings: HashMap<String, serde_json::Value>,
-}
-
 pub struct AppMutState {
     pub mappings: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     pub registry_path: String,
@@ -35,7 +31,9 @@ pub fn read_mappings(
     mappings: Arc<Mutex<HashMap<String, serde_json::Value>>>,
 ) {
     let paths = read_dir(PathBuf::from_str(&registry_path).unwrap()).unwrap();
-    let mut mtx = mappings.lock().expect("Error acquiring mutex lock");
+    let mut mtx = mappings
+        .lock()
+        .expect("Error acquiring mutex lock");
     for path in paths {
         let dir_entry = path.expect("Path invalid");
         let path = dir_entry.path();
@@ -56,17 +54,25 @@ pub async fn single_subject(
     path: web::Path<String>,
     app_data: web::Data<AppMutState>,
 ) -> impl Responder {
-    let subject = path.into_inner();
-    //let mappings = app_data.mappings;//.lock().expect("Error acquiring mutex lock");
-    match app_data.mappings.lock().expect("Error").get(&subject) {
-        Some(d) => {
-            return HttpResponse::Ok().json(d);
+    // aquire lock or die tryin
+    match app_data.mappings.lock() {
+        Ok(mtx) => {
+            let subject = path.into_inner();
+            match mtx.get(&subject) {
+                Some(d) => {
+                    return HttpResponse::Ok().json(d);
+                }
+                None => {
+                    log::debug!("Nothing found for {}", subject);
+                    return HttpResponse::NotFound().body("");
+                }
+            };
+        },
+        Err(e) => {
+            log::warn!("Error acquiring mutex lock! {}", e.to_string());
+            return HttpResponse::InternalServerError().body("");
         }
-        None => {
-            log::debug!("Nothing found for {}", subject);
-            return HttpResponse::NotFound().body("");
-        }
-    };
+    }
 }
 
 /// Endpoint to retrieve all porperty names for a given subject
@@ -78,21 +84,26 @@ pub async fn all_properties(
     path: web::Path<String>,
     app_data: web::Data<AppMutState>,
 ) -> impl Responder {
-    let subject = path.into_inner();
-    let mtx = app_data
-        .mappings
-        .lock()
-        .expect("Error acquiring mutex lock");
-    match mtx.get(&subject) {
-        Some(d) => {
-            log::debug!("Found Value for {}", subject);
-            return HttpResponse::Ok().json(d);
+    // aquire lock or die tryin
+    match app_data.mappings.lock() {
+        Ok(mtx) => {
+            let subject = path.into_inner();
+            match mtx.get(&subject) {
+                Some(d) => {
+                    log::debug!("Found Value for {}", subject);
+                    return HttpResponse::Ok().json(d);
+                }
+                None => {
+                    log::debug!("No Value found for {}", subject);
+                    return HttpResponse::NotFound().body("");
+                }
+            }
         }
-        None => {
-            log::debug!("No Value found for {}", subject);
-            return HttpResponse::NotFound().body("");
+        Err(e) => {
+            log::warn!("Error acquiring mutex lock! {}", e.to_string());
+            return HttpResponse::InternalServerError().body("");
         }
-    };
+    }
 }
 
 /// Endpoint to retrieve a specific property value for a given subject
@@ -105,14 +116,26 @@ pub async fn some_property(
     path: web::Path<(String, String)>,
     app_data: web::Data<AppMutState>,
 ) -> impl Responder {
-    let (subject, _name) = path.into_inner();
-    let mtx = app_data
-        .mappings
-        .lock()
-        .expect("Error acquiring mutex lock");
-    let meta = mtx.get(&subject).expect("Could not find it ");
-    log::debug!("{:#?}", meta);
-    HttpResponse::Ok().json(meta)
+    log::info!("FOOBARRBATZ");
+    // aquire lock or die tryin
+    match app_data.mappings.lock() {
+        Ok(mtx) => {
+            let (subject, name) = path.into_inner();
+            let meta = mtx.get(&subject).expect("Could not find it ");
+
+            if let Some(omsk) = meta.get(name) {
+                println!("{omsk}");
+
+                let val = Value::from_str("{ \"name\": {omsk} }").unwrap();
+                return HttpResponse::Ok().json(val);
+            }
+            return HttpResponse::NotFound().body("");
+        },
+        Err(e) => {
+            log::warn!("Error acquiring mutex lock! {}", e.to_string());
+            return HttpResponse::InternalServerError().body("");
+        }
+    }
 }
 
 /// Endpoint to trigger update of the data

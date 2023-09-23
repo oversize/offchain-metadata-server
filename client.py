@@ -42,13 +42,15 @@ def all_properties():
             n1 = time()
             idx = randint(1, len(hashs) - 1)
             subject_hash = hashs[idx]
-            url = f"{API_URL}/metadata/{subject_hash}"
+            url = f"https://tokens.cardano.org/metadata/{subject_hash}"
+            print(url)
             response = requests.get(url, timeout=15)
+            pprint(response)
             total = time() - n1
-            logline = f"{response.status} - {idx:4} - {total:.6f} - {subject_hash}"
+            logline = f"{response.status_code} - {idx:4} - {total:.6f} - {subject_hash}"
             print(logline)
             logfile.write(logline + "\n")
-            #sleep(.01)
+            sleep(.1)
         except RequestException as e:
             logline = f"Error {e} - {url}"
             print(logline)
@@ -99,15 +101,15 @@ def batch_request_subjects():
 
 def single_property():
     subjects = [
+        "5c4f08f47124b8e7ce9a4d0a00a5939da624cf6e533e1dc9de9b49c5556e636c6542656e6e793630",
         "782c158a98aed3aa676d9c85117525dcf3acc5506a30a8d87369fbcb4d6f6e6574",
         "fc4c6a1f2b159e3ea03259286de2061b8d3bc8d42dfb8a6105c5a9904357425443"
     ]
 
     #url = "https://tokens.cardano.org/XX"
-    url = f"https://api.metadata.staging.cf-deployments.org/mainnet/metadata/{subjects[0]}/properties/name"
-    print(url)
+    url = f"http://127.0.0.1:8081/metadata/{subjects[0]}/properties/name"
+    # url = f"https://api.metadata.staging.cf-deployments.org/mainnet/metadata/{subjects[0]}/properties/name"
     rsp = requests.get(url)
-    print(f"{rsp.status_code} - {rsp.reason} - {rsp.request.headers}")
     if not rsp.status_code == 200:
         return
     data = json.loads(rsp.content)
@@ -123,6 +125,7 @@ def single_subject():
     if not rsp1.status_code == 200:
         return
     data1 = json.loads(rsp1.content)
+    pprint(data1)
 
     url = f"https://api.metadata.staging.cf-deployments.org/mainnet/metadata/{subject}"
     rsp2 = requests.get(url)
@@ -144,10 +147,11 @@ def single_subject():
 
 
 def main():
-    #all_properties()
-    batch_request_subjects()
-    # single_property()
+    all_properties()
+    #batch_request_subjects()
+    #single_property()
     #single_subject()
+
 
 
 if __name__ == '__main__':

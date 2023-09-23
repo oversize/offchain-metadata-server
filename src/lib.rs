@@ -37,9 +37,10 @@ pub fn run(listener: TcpListener, registry_path: String) -> Result<Server, std::
             .wrap(Logger::default())
             .service(api::health)
             .service(api::single_subject)
+            .service(api::some_property)
             .service(api::all_properties)
-            .service(api::pong)
             .service(api::query)
+            .service(api::pong)
     })
     .listen(listener)?
     .run();
