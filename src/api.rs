@@ -19,7 +19,7 @@ pub struct AppMutState {
 
 #[get("/health")]
 pub async fn health() -> impl Responder {
-    println!("health");
+    log::info!("health");
     HttpResponse::Ok()
 }
 
@@ -41,7 +41,6 @@ pub fn read_mappings(
         let stem_path = path.file_stem().unwrap();
         let stem_str = stem_path.to_str().unwrap();
         let key = String::from_str(stem_str).unwrap();
-        //println!("key {:#?}", key);
         let json_data: serde_json::Value = serde_json::from_str(&json_data).expect("JSON invalid");
         mtx.insert(key, json_data);
     }
@@ -116,17 +115,14 @@ pub async fn some_property(
     path: web::Path<(String, String)>,
     app_data: web::Data<AppMutState>,
 ) -> impl Responder {
-    log::info!("FOOBARRBATZ");
-    // aquire lock or die tryin
     match app_data.mappings.lock() {
         Ok(mtx) => {
             let (subject, name) = path.into_inner();
             let meta = mtx.get(&subject).expect("Could not find it ");
 
-            if let Some(omsk) = meta.get(name) {
-                println!("{omsk}");
-
-                let val = Value::from_str("{ \"name\": {omsk} }").unwrap();
+            if let Some(v) = meta.get(name) {
+                let val = Value::from_str("{ \"name\": {v} }").unwrap();
+                log::info!("{val}");
                 return HttpResponse::Ok().json(val);
             }
             return HttpResponse::NotFound().body("");

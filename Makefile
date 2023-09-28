@@ -1,4 +1,4 @@
-# Some cargo helper
+REGION=eu-central-1
 
 
 # Some python helper
@@ -23,3 +23,14 @@ app:
 
 	)
 
+
+login:
+	aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin 643981526071.dkr.ecr.${REGION}.amazonaws.com
+
+build:
+	docker build -t offchain-metadata-api  .
+tag:
+	docker tag offchain-metadata-api:latest 643981526071.dkr.ecr.eu-central-1.amazonaws.com/offchain-metadata-api:latest
+
+push:
+	docker push 643981526071.dkr.ecr.eu-central-1.amazonaws.com/offchain-metadata-api:latest

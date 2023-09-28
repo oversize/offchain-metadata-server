@@ -2,3 +2,5 @@
 *.envrc
 *.venv
 requests.log
+.vscode
+tmp*
