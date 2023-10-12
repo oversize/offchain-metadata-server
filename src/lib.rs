@@ -40,7 +40,7 @@ pub fn run(listener: TcpListener, registry_path: String) -> Result<Server, std::
             .service(api::some_property)
             .service(api::all_properties)
             .service(api::query)
-            .service(api::pong)
+            .service(api::reread_mappings)
     })
     .listen(listener)?
     .run();

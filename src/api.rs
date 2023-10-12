@@ -7,7 +7,8 @@ use std::sync::{Arc, Mutex};
 use actix_web::{get, post, web, HttpResponse, Responder};
 
 use serde::Deserialize;
-use serde_json::{self, Value};
+// use serde_json::de::Read;
+use serde_json::{json, Value};
 
 use log;
 
@@ -30,21 +31,34 @@ pub fn read_mappings(
     registry_path: String,
     mappings: Arc<Mutex<HashMap<String, serde_json::Value>>>,
 ) {
-    let paths = read_dir(PathBuf::from_str(&registry_path).unwrap()).unwrap();
-    let mut mtx = mappings
-        .lock()
-        .expect("Error acquiring mutex lock");
-    for path in paths {
-        let dir_entry = path.expect("Path invalid");
-        let path = dir_entry.path();
-        let json_data = std::fs::read_to_string(&path).expect("Json invalid");
-        let stem_path = path.file_stem().unwrap();
-        let stem_str = stem_path.to_str().unwrap();
-        let key = String::from_str(stem_str).unwrap();
-        let json_data: serde_json::Value = serde_json::from_str(&json_data).expect("JSON invalid");
-        mtx.insert(key, json_data);
+    // Can we create a PathBuf from registry_path?
+    let _path_buf = PathBuf::from_str(&registry_path);
+    if _path_buf.is_err() {
+        log::error!("Not a string {}", &registry_path);
+        return;
     }
-    log::info!("Read {} items", mtx.len());
+    //Can we create a ReadDir iterator of the PathBug?
+    let path_buf = _path_buf.unwrap();
+    let paths = read_dir(path_buf);
+
+    if let Ok(mut mtx) = mappings.lock() {
+        // We know paths is not an error
+        for path in paths.expect("Not a ReadDir Iterator") {
+            let path = path.expect("Not a DirEntry").path();
+            let stem_path = path.file_stem().expect("No file_stem");
+            let stem_str = stem_path.to_str().expect("Failed creating str");
+            // The key for hashmap is the name of the json file on disk
+            let key = stem_str.to_string();
+            if let Ok(raw_json) = std::fs::read_to_string(&path) {
+                if let Ok(json_data) = serde_json::from_str(&raw_json) {
+                    mtx.insert(key, json_data);
+                }
+            }
+        }
+        log::info!("Read {} items", mtx.len());
+    } else {
+        log::error!("Could not acquire mutex lock in read_mappings");
+    }
 }
 
 /// Endpoint to retrieve a single subject
@@ -121,8 +135,7 @@ pub async fn some_property(
             let meta = mtx.get(&subject).expect("Could not find it ");
 
             if let Some(v) = meta.get(name) {
-                let val = Value::from_str("{ \"name\": {v} }").unwrap();
-                log::info!("{val}");
+                let val = json!({ "subject": &subject, "name": v });
                 return HttpResponse::Ok().json(val);
             }
             return HttpResponse::NotFound().body("");
@@ -135,10 +148,10 @@ pub async fn some_property(
 }
 
 /// Endpoint to trigger update of the data
-#[get("/pong")]
-pub async fn pong(app_data: web::Data<AppMutState>) -> impl Responder {
+#[get("/reread")]
+pub async fn reread_mappings(app_data: web::Data<AppMutState>) -> impl Responder {
     read_mappings(app_data.registry_path.clone(), app_data.mappings.clone());
-    HttpResponse::Ok()
+    HttpResponse::Ok().body("Reread contents")
 }
 
 /// A query payload for the batch query endpoint
@@ -167,6 +180,7 @@ pub async fn query(
     log::debug!("Requested {} subjects", payload.subjects.len());
     if properties.is_some() {
         // as_ref() temporary references properties, so its not actually moved
+        //   It needs to be used a little lower in the code
         log::debug!("   with {} properties", properties.as_ref().unwrap().len());
     }
 

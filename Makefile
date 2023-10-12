@@ -29,7 +29,6 @@ login:
 
 build:
 	docker build -t offchain-metadata-api  .
-tag:
 	docker tag offchain-metadata-api:latest 643981526071.dkr.ecr.eu-central-1.amazonaws.com/offchain-metadata-api:latest
 
 push:
