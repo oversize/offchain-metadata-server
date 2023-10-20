@@ -1,28 +1,19 @@
 #!/usr/bin/env python3
-"""Super simple script to just hammer the api with requests.
-For now i just wanted to throw all kinds of valid request against it.
-
+"""
 IOGs Api
 https://tokens.cardano.org/
 
 CFs API:
 https://api.metadata.staging.cf-deployments.org/
 https://api.metadata.staging.cf-deployments.org/apidocs
-
-
-My idea is to write requests and verify that the apis provide the same
-output as my rust implementation does.
-
-
-
 """
 import os
 import requests
-import sys
 import json
 from pprint import pprint
 from socket import timeout
 from time import sleep, time
+from datetime import datetime
 from random import randint
 from requests.exceptions import RequestException
 from urllib.error import URLError
@@ -31,26 +22,47 @@ from pathlib import Path
 API_URL = os.getenv("TOKENAPI_URL", None)
 MAPPINGS = os.getenv("MAPPINGS", None)
 
-#if not API_URL or not MAPPINGS:
-#        sys.exit("Set env vars")
+ALL_HASHS = [f.stem for f in Path(MAPPINGS).glob("*.json")]
+# ALL_HASHS = [f.stem for f in Path("/home/msch/src/cf/cardano-token-registry/mappings").glob("*.json")]
+
 
 def all_properties():
-    hashs = [f.stem for f in Path(MAPPINGS).glob("*.json")]
     logfile = Path("requests.log").open("a")
+    url = ""
     while True:
+
         try:
-            n1 = time()
-            idx = randint(1, len(hashs) - 1)
-            subject_hash = hashs[idx]
+            idx = randint(1, len(ALL_HASHS) - 1)
+            subject_hash = ALL_HASHS[idx]
             url = f"https://tokens.cardano.org/metadata/{subject_hash}"
-            print(url)
-            response = requests.get(url, timeout=15)
-            pprint(response)
-            total = time() - n1
-            logline = f"{response.status_code} - {idx:4} - {total:.6f} - {subject_hash}"
-            print(logline)
+            response_original = requests.get(url, timeout=5)
+            if not response_original.status_code == 200:
+                print(f"Got {response_original.status_code} from {url}")
+                continue
+            data1 = json.loads(response_original.content)
+
+            # url = f"http://TokenApiRS-772077917.eu-central-1.elb.amazonaws.com/metadata/{subject_hash}"
+            # url = f"https://tzfsnrjw7xwodrfatlft5a6zia0meaxo.lambda-url.eu-central-1.on.aws/metadata/{subject_hash}"
+            # url = f"http://OffchainMetadataLambda-450124955.eu-central-1.elb.amazonaws.com/metadata/{subject_hash}"
+            url = f"http://127.0.0.1:8080/metadata/{subject_hash}"
+            response_us = requests.get(url, timeout=5)
+            logline = f"{datetime.now()}  "
+            if not response_us.status_code == 200:
+                print(f"Got {response_us.status_code} from {url}")
+                continue
+            data2 = json.loads(response_us.content)
+
+            if data1 != data2:
+                msg = f"Not Equal - {subject_hash}"
+                logline += msg
+                print(msg)
+            else:
+                msg = f"Equal {subject_hash}"
+                print(msg)
+                logline += msg
+                assert data1 == data2
+            sleep(.01)
             logfile.write(logline + "\n")
-            sleep(.1)
         except RequestException as e:
             logline = f"Error {e} - {url}"
             print(logline)
@@ -59,10 +71,8 @@ def all_properties():
 
 def batch_request_subjects():
     """Send Post Requests to
-
     782c158a98aed3aa676d9c85117525dcf3acc5506a30a8d87369fbcb4d6f6e6574
     fc4c6a1f2b159e3ea03259286de2061b8d3bc8d42dfb8a6105c5a9904357425443
-
     """
     _data = dict({
          "subjects": [
@@ -71,27 +81,28 @@ def batch_request_subjects():
             "782c158a98aed3aa676d9c85117525dcf3acc5506a30a8d87369fbcb4d6f6e6574",
             "fc4c6a1f2b159e3ea03259286de2061b8d3bc8d42dfb8a6105c5a9904357425443"
         ],
-        "properties": [
-            "subject",
-            "name",
-            "description",
-        ]
+        #"properties": [
+            # "subject",
+            # "name",
+            # "description",
+        #]
     })
 
     #url = "https://api.metadata.staging.cf-deployments.org/mainnet/metadata/query"
     #url = "https://tokens.cardano.org/metadata/query"
-    url = "http://127.0.0.1:8081/metadata/query"
+    url = "http://127.0.0.1:8080/metadata/query"
+    # url = "https://tzfsnrjw7xwodrfatlft5a6zia0meaxo.lambda-url.eu-central-1.on.aws/metadata/query"
     # url = "https://tokens.dev.colo-primary.cf-systems.org/metadata/query"
-    print(url)
+
     rsp = requests.post(url, json=_data)
-    print(f"{rsp.status_code} - {rsp.reason} - {rsp.request.headers}")
+    print(f"{rsp.status_code} - {rsp.reason} - {url}")
 
     if not rsp.status_code == 200:
         return
 
     data = json.loads(rsp.content)
-    print()
     pprint(data)
+
     return
     # Data must container one key 'subjects' that holds the list of subjects
     # stripped down to the properties that where send
@@ -107,7 +118,7 @@ def single_property():
     ]
 
     #url = "https://tokens.cardano.org/XX"
-    url = f"http://127.0.0.1:8081/metadata/{subjects[0]}/properties/name"
+    url = f"http://127.0.0.1:8080/metadata/{subjects[0]}/properties/name"
     # url = f"https://api.metadata.staging.cf-deployments.org/mainnet/metadata/{subjects[0]}/properties/name"
     rsp = requests.get(url)
     if not rsp.status_code == 200:
@@ -119,40 +130,22 @@ def single_property():
 
 def single_subject():
     subject = "fc4c6a1f2b159e3ea03259286de2061b8d3bc8d42dfb8a6105c5a9904357425443"
-
-    url = f"http://127.0.0.1:8081/metadata/{subject}"
+    url = f"http://127.0.0.1:8080/metadata/{subject}"
+    #url = f"http://ec2-18-193-66-224.eu-central-1.compute.amazonaws.com/metadata/{subject}"
     rsp1 = requests.get(url)
     if not rsp1.status_code == 200:
+        pprint(rsp1)
         return
     data1 = json.loads(rsp1.content)
-    pprint(data1)
-
-    url = f"https://api.metadata.staging.cf-deployments.org/mainnet/metadata/{subject}"
-    rsp2 = requests.get(url)
-    if not rsp2.status_code == 200:
-        return
-    data2 = json.loads(rsp2.content)
-    del data2["additionalProperties"]
-
-    assert data1 == data2
-
-    url = f"https://tokens.cardano.org/metadata/{subject}"
-    rsp3 = requests.get(url)
-    if not rsp3.status_code == 200:
-        return
-    data3 = json.loads(rsp3.content)
-
-    assert data1 == data3
-
+    print(data1)
 
 
 def main():
-    all_properties()
-    #batch_request_subjects()
-    #single_property()
+    #all_properties()
+    batch_request_subjects()
+    print()
+    single_property()
     #single_subject()
-
-
 
 if __name__ == '__main__':
     main()

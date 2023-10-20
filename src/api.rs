@@ -18,47 +18,62 @@ pub struct AppMutState {
     pub registry_path: String,
 }
 
+// Endpint for loadbalancer to check health of service
 #[get("/health")]
 pub async fn health() -> impl Responder {
     log::info!("health");
     HttpResponse::Ok()
 }
 
+/// Endpoint to trigger update of the data
+#[get("/reread")]
+pub async fn reread_mappings(app_data: web::Data<AppMutState>) -> impl Responder {
+    read_mappings(app_data.registry_path.clone(), app_data.mappings.clone());
+    HttpResponse::Ok().body("Reread contents")
+}
+
 /// Funcion that reads the files in registry_path and updates the mappings
 /// This function should add better error handling by returning a result so
-/// the views can act accordingly
+/// the views can act accordingly!
 pub fn read_mappings(
     registry_path: String,
     mappings: Arc<Mutex<HashMap<String, serde_json::Value>>>,
 ) {
+    log::debug!("Reading mappings from {}", registry_path);
+
     // Can we create a PathBuf from registry_path?
-    let _path_buf = PathBuf::from_str(&registry_path);
-    if _path_buf.is_err() {
+    let path_buf = PathBuf::from_str(&registry_path);
+    if path_buf.is_err() {
         log::error!("Not a string {}", &registry_path);
         return;
     }
-    //Can we create a ReadDir iterator of the PathBug?
-    let path_buf = _path_buf.unwrap();
+
+    // Can we create a ReadDir iterator of the PathBug?
+    let path_buf = path_buf.unwrap();
     let paths = read_dir(path_buf);
 
-    if let Ok(mut mtx) = mappings.lock() {
-        // We know paths is not an error
-        for path in paths.expect("Not a ReadDir Iterator") {
-            let path = path.expect("Not a DirEntry").path();
-            let stem_path = path.file_stem().expect("No file_stem");
-            let stem_str = stem_path.to_str().expect("Failed creating str");
-            // The key for hashmap is the name of the json file on disk
-            let key = stem_str.to_string();
-            if let Ok(raw_json) = std::fs::read_to_string(&path) {
-                if let Ok(json_data) = serde_json::from_str(&raw_json) {
-                    mtx.insert(key, json_data);
-                }
+    let mut mtx = match mappings.lock() {
+        Ok(mtx) => mtx,
+        Err(e) => {
+            log::error!("Error acquiring mutex lock! {}", e.to_string());
+            return;
+        }
+    };
+
+    // We know paths is not an error
+    for path in paths.expect("Not a ReadDir Iterator") {
+        let path = path.expect("Not a DirEntry").path();
+        let stem_path = path.file_stem().expect("No file_stem");
+        let stem_str = stem_path.to_str().expect("Failed creating str");
+        // The key for hashmap is the name of the json file on disk
+        let key = stem_str.to_string();
+        if let Ok(raw_json) = std::fs::read_to_string(&path) {
+            if let Ok(json_data) = serde_json::from_str(&raw_json) {
+                mtx.insert(key, json_data);
             }
         }
-        log::info!("Read {} items", mtx.len());
-    } else {
-        log::error!("Could not acquire mutex lock in read_mappings");
     }
+    log::info!("Read {} items", mtx.len());
 }
 
 /// Endpoint to retrieve a single subject
@@ -67,25 +82,28 @@ pub async fn single_subject(
     path: web::Path<String>,
     app_data: web::Data<AppMutState>,
 ) -> impl Responder {
-    // aquire lock or die tryin
-    match app_data.mappings.lock() {
-        Ok(mtx) => {
-            let subject = path.into_inner();
-            match mtx.get(&subject) {
-                Some(d) => {
-                    return HttpResponse::Ok().json(d);
-                }
-                None => {
-                    log::debug!("Nothing found for {}", subject);
-                    return HttpResponse::NotFound().body("");
-                }
-            };
-        },
+    // Grab mutex lock
+    let mtx = match app_data.mappings.lock() {
+        Ok(mtx) => mtx,
         Err(e) => {
-            log::warn!("Error acquiring mutex lock! {}", e.to_string());
+            log::error!("Error acquiring mutex lock! {}", e.to_string());
             return HttpResponse::InternalServerError().body("");
         }
-    }
+    };
+
+    // extract subject_string from url path
+    let subject_string = path.into_inner();
+
+    // Grab subject for given subject_string or die
+    let subject = match mtx.get(&subject_string) {
+        Some(d) => d,
+        None => {
+            log::debug!("Subject not found {}", subject_string);
+            return HttpResponse::NotFound().body("");
+        }
+    };
+
+    HttpResponse::Ok().json(subject)
 }
 
 /// Endpoint to retrieve all porperty names for a given subject
@@ -97,26 +115,28 @@ pub async fn all_properties(
     path: web::Path<String>,
     app_data: web::Data<AppMutState>,
 ) -> impl Responder {
-    // aquire lock or die tryin
-    match app_data.mappings.lock() {
-        Ok(mtx) => {
-            let subject = path.into_inner();
-            match mtx.get(&subject) {
-                Some(d) => {
-                    log::debug!("Found Value for {}", subject);
-                    return HttpResponse::Ok().json(d);
-                }
-                None => {
-                    log::debug!("No Value found for {}", subject);
-                    return HttpResponse::NotFound().body("");
-                }
-            }
-        }
+    // Grab mutex lock
+    let mtx = match app_data.mappings.lock() {
+        Ok(mtx) => mtx,
         Err(e) => {
             log::warn!("Error acquiring mutex lock! {}", e.to_string());
             return HttpResponse::InternalServerError().body("");
         }
-    }
+    };
+
+    // Extract subject_string from url path
+    let subject_string = path.into_inner();
+
+    // Grab subject for given subject_string or die
+    let subject = match mtx.get(&subject_string) {
+        Some(s) => s,
+        None => {
+            log::debug!("Subject not found {}", subject_string);
+            return HttpResponse::NotFound().body("");
+        }
+    };
+
+    HttpResponse::Ok().json(subject)
 }
 
 /// Endpoint to retrieve a specific property value for a given subject
@@ -124,35 +144,46 @@ pub async fn all_properties(
 /// But both other impementations have chosen to pick /metadata/SUBJECT/properties/NAME
 /// https://tokens.cardano.org/metadata/5c4f08f47124b8e7ce9a4d0a00a5939da624cf6e533e1dc9de9b49c5556e636c6542656e6e793630/properties/logo
 ///
-#[get("/metadata/{subject}/properties/{name}")]
-pub async fn some_property(
+#[get("/metadata/{subject}/properties/{property}")]
+pub async fn single_property(
     path: web::Path<(String, String)>,
     app_data: web::Data<AppMutState>,
 ) -> impl Responder {
-    match app_data.mappings.lock() {
-        Ok(mtx) => {
-            let (subject, name) = path.into_inner();
-            let meta = mtx.get(&subject).expect("Could not find it ");
-
-            if let Some(v) = meta.get(name) {
-                let val = json!({ "subject": &subject, "name": v });
-                return HttpResponse::Ok().json(val);
-            }
-            return HttpResponse::NotFound().body("");
-        },
+    // Grab mutex lock
+    let mtx = match app_data.mappings.lock() {
+        Ok(mtx) => mtx,
         Err(e) => {
-            log::warn!("Error acquiring mutex lock! {}", e.to_string());
+            log::error!("Error acquiring mutex lock! {}", e.to_string());
             return HttpResponse::InternalServerError().body("");
         }
-    }
+    };
+
+    // Extract subject_string and name from url path
+    let (subject_string, property_name) = path.into_inner();
+
+    // Grab subject for given subject_string or die
+    let subject = match mtx.get(&subject_string) {
+        Some(meta) => meta,
+        None => {
+            log::debug!("Subject not found {}", subject_string);
+            return HttpResponse::NotFound().body("");
+        }
+    };
+
+    // Grab property from subject or die
+    let property_value = match subject.get(&property_name) {
+        Some(v) => v,
+        None => {
+            // given key not found in metadata
+            return HttpResponse::NotFound().body("");
+        }
+    };
+
+    HttpResponse::Ok().json(json!({
+        "subject": &subject, &property_name: property_value
+    }))
 }
 
-/// Endpoint to trigger update of the data
-#[get("/reread")]
-pub async fn reread_mappings(app_data: web::Data<AppMutState>) -> impl Responder {
-    read_mappings(app_data.registry_path.clone(), app_data.mappings.clone());
-    HttpResponse::Ok().body("Reread contents")
-}
 
 /// A query payload for the batch query endpoint
 #[derive(Deserialize)]
@@ -169,12 +200,15 @@ pub async fn query(
     payload: web::Json<Query>,
     app_data: web::Data<AppMutState>,
 ) -> impl Responder {
-    // subjects holds subjects that where requests and should be returned
-    let mut subjects: Vec<Value> = Vec::new();
-    let mtx = app_data
-        .mappings
-        .lock()
-        .expect("Error acquiring mutex lock");
+
+    let mtx = match app_data.mappings.lock() {
+        Ok(mtx) => mtx,
+        Err(e) => {
+            log::error!("Error acquiring mutex lock! {}", e.to_string());
+            return HttpResponse::InternalServerError().body("");
+        }
+    };
+
     // Grab ref to properties so we can use it throughout the for loop below
     let properties = payload.properties.clone();
     log::debug!("Requested {} subjects", payload.subjects.len());
@@ -184,43 +218,46 @@ pub async fn query(
         log::debug!("   with {} properties", properties.as_ref().unwrap().len());
     }
 
-    for subject in payload.subjects.iter() {
-        // Find subject in mappings or do nothing
-        match mtx.get(subject) {
-            Some(subj) => {
-                // If there are properties given in the payload, only return
-                // these for each subject, if not return the whole subject
-                match &properties {
-                    Some(props) => {
-                        // Build a new subject only with given properties
-                        let mut newsubj: HashMap<&str, &Value> = HashMap::new();
-                        for p in props.iter() {
-                            let value = subj.get(p);
-                            if value.is_some() {
-                                newsubj.insert(p, value.unwrap());
-                            }
-                        }
-                        subjects.push(serde_json::json!(newsubj));
-                    },
-                    None => {
-                        // There are no properties given, return whole subject
-                        subjects.push(subj.clone());
+    // return_subjects holds subjects that where requests and should be returned
+    let mut return_subjects: Vec<Value> = Vec::new();
+    for subject_string in payload.subjects.iter() {
+        let subject = match mtx.get(subject_string) {
+            Some(s) => s,
+            None => {
+                log::debug!("Subject not found {}", subject_string);
+                continue;
+            }
+        };
+        // Found subject, return full or only the given property
+        match &properties {
+            Some(property_strings) => {
+                // Build a new subject only with given properties
+                // Iterate over all given properties, search each in
+                // the subject and add to newsubj if existing
+                let mut newsubj: HashMap<&str, &Value> = HashMap::new();
+                for ps in property_strings.iter() {
+                    match subject.get(ps) {
+                        Some(property) => {
+                            newsubj.insert(ps, property);
+                        },
+                        None => {}
                     }
                 }
+                // What if none of the properties are found? Then you
+                // should not have provided the list in the request in the
+                // first place! However, this is where a correct implementation
+                // of all_properties becomes important so the client can
+                // check which to ask for.
+                return_subjects.push(serde_json::json!(newsubj));
             },
             None => {
-                log::debug!("Subject not found {}", subject);
+                // There are no properties provided, return whole subject
+                return_subjects.push(subject.clone());
             }
         }
     }
 
-    // let mut subjects: Vec<serde_json::Value> = Vec::new();
-    //for subject in subjects.iter() {
-    //    let meta = data.metadata.get(subject).expect("Could not find it ");
-    //    subjects.push(meta.to_owned())
-    //}
-    let out = serde_json::json!({
-        "subjects": subjects
-    });
-    HttpResponse::Ok().json(out)
+    HttpResponse::Ok().json(json!({
+        "subjects": return_subjects
+    }))
 }

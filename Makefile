@@ -1,35 +1,23 @@
-REGION=eu-central-1
-
-
-# Some python helper
-venv:
-	: # Create venv if it doesn't exist
-	: # test -d venv || virtualenv -p python3 --no-site-packages venv
-	test -d .venv || python3 -m venv .venv
-
-install: venv
-	: # Activate venv and install somthing inside
-	(\
-		source .venv/bin/activate;\
-		pip install --upgrade pip\
-		pip install requests\
-	)
-
-.PHONY: app
-app:
-	: # Run the app
-	(\
-		source .venv/bin/activate;\
-
-	)
-
+IMAGE=offchain-metadata-api
+# AWS_REGION=eu-central-1
+# ECR_REPOSITORY=XXX.dkr.ecr.eu-central-1.amazonaws.com
 
 login:
-	aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin 643981526071.dkr.ecr.${REGION}.amazonaws.com
+	aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REPOSITORY}
 
 build:
-	docker build -t offchain-metadata-api  .
-	docker tag offchain-metadata-api:latest 643981526071.dkr.ecr.eu-central-1.amazonaws.com/offchain-metadata-api:latest
+	docker build -t ${IMAGE} .
+	docker tag ${IMAGE}:latest ${ECR_REPOSITORY}/${IMAGE}:latest
 
 push:
-	docker push 643981526071.dkr.ecr.eu-central-1.amazonaws.com/offchain-metadata-api:latest
+	docker push ${ECR_REPOSITORY}/${IMAGE}:latest
+
+develop:
+	RUST_LOG=debug cargo run
+
+dockerdevelop:
+	docker run -it --rm --name ${IMAGE} \
+		-v $(pwd)/registry_data:/registry \
+		-p 8080:8080 \
+		-e RUST_LOG=debug \
+		${IMAGE}:latest
