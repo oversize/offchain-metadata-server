@@ -88,9 +88,23 @@ pub async fn all_properties(
 /// The CIP Recommended /metadata/SUBJECT/property/NAME
 /// But both other impementations have chosen to pick /metadata/SUBJECT/properties/NAME
 /// https://tokens.cardano.org/metadata/5c4f08f47124b8e7ce9a4d0a00a5939da624cf6e533e1dc9de9b49c5556e636c6542656e6e793630/properties/logo
-///
 #[get("/metadata/{subject}/properties/{property}")]
-pub async fn single_property(
+pub async fn single_property_by_other_impl(
+    path: web::Path<(String, String)>,
+    app_data: web::Data<AppMutState>,
+) -> impl Responder {
+    single_property(path, app_data).await
+}
+
+#[get("/metadata/{subject}/property/{property}")]
+pub async fn single_property_by_spec(
+    path: web::Path<(String, String)>,
+    app_data: web::Data<AppMutState>,
+) -> impl Responder {
+    single_property(path, app_data).await
+}
+
+async fn single_property(
     path: web::Path<(String, String)>,
     app_data: web::Data<AppMutState>,
 ) -> impl Responder {
