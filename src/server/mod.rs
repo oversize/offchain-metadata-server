@@ -7,12 +7,15 @@ use std::{
 };
 
 mod api;
+mod registry;
 
 pub fn run(listener: TcpListener, registry_path: PathBuf) -> Result<Server, std::io::Error> {
     let mappings: Arc<Mutex<HashMap<String, serde_json::Value>>> =
         Arc::new(Mutex::new(HashMap::new()));
 
-    api::read_mappings(&registry_path, &mappings);
+    let mut mtx = mappings.lock().expect("couldn't lock initial mutex?");
+
+    registry::read_mappings(&registry_path, &mut mtx);
 
     let app_data = web::Data::new(api::AppMutState {
         mappings: mappings.clone(),
