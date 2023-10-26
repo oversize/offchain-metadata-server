@@ -14,6 +14,21 @@ pub struct AppMutState {
     pub registry_path: PathBuf,
 }
 
+impl AppMutState {
+    fn with_mappings<F>(&self, action: F) -> HttpResponse
+    where
+        F: FnOnce(&mut HashMap<String, serde_json::Value>) -> HttpResponse,
+    {
+        match self.mappings.lock() {
+            Ok(mut mtx) => action(&mut mtx),
+            Err(e) => {
+                log::error!("Error acquiring mutex lock! {}", e.to_string());
+                HttpResponse::InternalServerError().body("")
+            }
+        }
+    }
+}
+
 // Endpoint for loadbalancer to check health of service
 #[get("/health")]
 pub async fn health() -> impl Responder {
@@ -24,17 +39,10 @@ pub async fn health() -> impl Responder {
 /// Endpoint to trigger update of the data
 #[get("/reread")]
 pub async fn reread_mappings(app_data: web::Data<AppMutState>) -> impl Responder {
-    let mut mtx = match app_data.mappings.lock() {
-        Ok(mtx) => mtx,
-        Err(e) => {
-            log::error!("Error acquiring mutex lock! {}", e.to_string());
-            return HttpResponse::InternalServerError().body("");
-        }
-    };
-
-    registry::read_mappings(&app_data.registry_path, &mut mtx);
-
-    HttpResponse::Ok().body("Reread contents")
+    app_data.with_mappings(|mappings| {
+        registry::read_mappings(&app_data.registry_path, mappings);
+        HttpResponse::Ok().body("Reread contents")
+    })
 }
 
 /// Endpoint to retrieve a single subject
@@ -43,28 +51,16 @@ pub async fn single_subject(
     path: web::Path<String>,
     app_data: web::Data<AppMutState>,
 ) -> impl Responder {
-    // Grab mutex lock
-    let mtx = match app_data.mappings.lock() {
-        Ok(mtx) => mtx,
-        Err(e) => {
-            log::error!("Error acquiring mutex lock! {}", e.to_string());
-            return HttpResponse::InternalServerError().body("");
+    app_data.with_mappings(|mappings| {
+        // extract subject_string from url path
+        let subject_string = path.into_inner();
+
+        // Grab subject for given subject_string or die
+        match mappings.get(&subject_string) {
+            Some(subject) => HttpResponse::Ok().json(subject),
+            None => not_found(&subject_string),
         }
-    };
-
-    // extract subject_string from url path
-    let subject_string = path.into_inner();
-
-    // Grab subject for given subject_string or die
-    let subject = match mtx.get(&subject_string) {
-        Some(d) => d,
-        None => {
-            log::debug!("Subject not found {}", subject_string);
-            return HttpResponse::NotFound().body("");
-        }
-    };
-
-    HttpResponse::Ok().json(subject)
+    })
 }
 
 /// Endpoint to retrieve all porperty names for a given subject
@@ -76,28 +72,16 @@ pub async fn all_properties(
     path: web::Path<String>,
     app_data: web::Data<AppMutState>,
 ) -> impl Responder {
-    // Grab mutex lock
-    let mtx = match app_data.mappings.lock() {
-        Ok(mtx) => mtx,
-        Err(e) => {
-            log::warn!("Error acquiring mutex lock! {}", e.to_string());
-            return HttpResponse::InternalServerError().body("");
+    app_data.with_mappings(|mappings| {
+        // Extract subject_string from url path
+        let subject_string = path.into_inner();
+
+        // Grab subject for given subject_string or die
+        match mappings.get(&subject_string) {
+            Some(subject) => HttpResponse::Ok().json(subject),
+            None => not_found(&subject_string),
         }
-    };
-
-    // Extract subject_string from url path
-    let subject_string = path.into_inner();
-
-    // Grab subject for given subject_string or die
-    let subject = match mtx.get(&subject_string) {
-        Some(s) => s,
-        None => {
-            log::debug!("Subject not found {}", subject_string);
-            return HttpResponse::NotFound().body("");
-        }
-    };
-
-    HttpResponse::Ok().json(subject)
+    })
 }
 
 /// Endpoint to retrieve a specific property value for a given subject
@@ -110,39 +94,26 @@ pub async fn single_property(
     path: web::Path<(String, String)>,
     app_data: web::Data<AppMutState>,
 ) -> impl Responder {
-    // Grab mutex lock
-    let mtx = match app_data.mappings.lock() {
-        Ok(mtx) => mtx,
-        Err(e) => {
-            log::error!("Error acquiring mutex lock! {}", e.to_string());
-            return HttpResponse::InternalServerError().body("");
-        }
-    };
+    app_data.with_mappings(|mappings| {
+        // Extract subject_string and name from url path
+        let (subject_string, property_name) = path.into_inner();
 
-    // Extract subject_string and name from url path
-    let (subject_string, property_name) = path.into_inner();
+        // Grab subject for given subject_string or die
+        let subject = match mappings.get(&subject_string) {
+            Some(meta) => meta,
+            None => return not_found(&subject_string),
+        };
 
-    // Grab subject for given subject_string or die
-    let subject = match mtx.get(&subject_string) {
-        Some(meta) => meta,
-        None => {
-            log::debug!("Subject not found {}", subject_string);
-            return HttpResponse::NotFound().body("");
-        }
-    };
+        // Grab property from subject or die
+        let property_value = match subject.get(&property_name) {
+            Some(v) => v,
+            None => return not_found(&property_name),
+        };
 
-    // Grab property from subject or die
-    let property_value = match subject.get(&property_name) {
-        Some(v) => v,
-        None => {
-            // given key not found in metadata
-            return HttpResponse::NotFound().body("");
-        }
-    };
-
-    HttpResponse::Ok().json(json!({
-        "subject": &subject, &property_name: property_value
-    }))
+        HttpResponse::Ok().json(json!({
+            "subject": &subject, &property_name: property_value
+        }))
+    })
 }
 
 /// A query payload for the batch query endpoint
@@ -157,60 +128,58 @@ pub struct Query {
 /// to only these properties
 #[post("/metadata/query")]
 pub async fn query(payload: web::Json<Query>, app_data: web::Data<AppMutState>) -> impl Responder {
-    let mtx = match app_data.mappings.lock() {
-        Ok(mtx) => mtx,
-        Err(e) => {
-            log::error!("Error acquiring mutex lock! {}", e.to_string());
-            return HttpResponse::InternalServerError().body("");
+    app_data.with_mappings(|mappings| {
+        // Grab ref to properties so we can use it throughout the for loop below
+        log::debug!("Requested {} subjects", payload.subjects.len());
+        if let Some(ref properties) = payload.properties {
+            log::debug!("   with {} properties", properties.len());
         }
-    };
 
-    // Grab ref to properties so we can use it throughout the for loop below
-    let properties = payload.properties.clone();
-    log::debug!("Requested {} subjects", payload.subjects.len());
-    if properties.is_some() {
-        // as_ref() temporary references properties, so its not actually moved
-        //   It needs to be used a little lower in the code
-        log::debug!("   with {} properties", properties.as_ref().unwrap().len());
-    }
-
-    // return_subjects holds subjects that where requests and should be returned
-    let mut return_subjects: Vec<Value> = Vec::new();
-    for subject_string in payload.subjects.iter() {
-        let subject = match mtx.get(subject_string) {
-            Some(s) => s,
-            None => {
-                log::debug!("Subject not found {}", subject_string);
-                continue;
-            }
-        };
-        // Found subject, return full or only the given property
-        match &properties {
-            Some(property_strings) => {
-                // Build a new subject only with given properties
-                // Iterate over all given properties, search each in
-                // the subject and add to newsubj if existing
-                let mut newsubj: HashMap<&str, &Value> = HashMap::new();
-                for ps in property_strings.iter() {
-                    if let Some(property) = subject.get(ps) {
-                        newsubj.insert(ps, property);
-                    }
+        // return_subjects holds subjects that where requests and should be returned
+        let mut return_subjects: Vec<Value> = Vec::new();
+        for subject_string in payload.subjects.iter() {
+            let subject = match mappings.get(subject_string) {
+                Some(s) => s,
+                None => {
+                    log::debug!("Subject not found {}", subject_string);
+                    continue;
                 }
-                // What if none of the properties are found? Then you
-                // should not have provided the list in the request in the
-                // first place! However, this is where a correct implementation
-                // of all_properties becomes important so the client can
-                // check which to ask for.
-                return_subjects.push(serde_json::json!(newsubj));
-            }
-            None => {
-                // There are no properties provided, return whole subject
-                return_subjects.push(subject.clone());
+            };
+
+            // Found subject, return full or only the given property
+            match &payload.properties {
+                Some(property_strings) => {
+                    // Build a new subject only with given properties
+                    // Iterate over all given properties, search each in
+                    // the subject and add to newsubj if existing
+                    let mut newsubj: HashMap<&str, &Value> = HashMap::new();
+                    for k in property_strings.iter() {
+                        if let Some(v) = subject.get(k) {
+                            newsubj.insert(k, v);
+                        }
+                    }
+
+                    // What if none of the properties are found? Then you
+                    // should not have provided the list in the request in the
+                    // first place! However, this is where a correct implementation
+                    // of all_properties becomes important so the client can
+                    // check which to ask for.
+                    return_subjects.push(serde_json::json!(newsubj));
+                }
+                None => {
+                    // There are no properties provided, return whole subject
+                    return_subjects.push(subject.clone());
+                }
             }
         }
-    }
 
-    HttpResponse::Ok().json(json!({
-        "subjects": return_subjects
-    }))
+        HttpResponse::Ok().json(json!({
+            "subjects": return_subjects
+        }))
+    })
+}
+
+fn not_found(key: &str) -> HttpResponse {
+    log::debug!("Subject or property not found {}", key);
+    HttpResponse::NotFound().body("")
 }
