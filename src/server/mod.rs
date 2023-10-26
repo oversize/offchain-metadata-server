@@ -2,19 +2,21 @@ use actix_web::{dev::Server, middleware::Logger, web, App, HttpServer, Result};
 use std::{
     collections::HashMap,
     net::TcpListener,
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
 mod api;
 
-pub fn run(listener: TcpListener, registry_path: String) -> Result<Server, std::io::Error> {
+pub fn run(listener: TcpListener, registry_path: PathBuf) -> Result<Server, std::io::Error> {
     let mappings: Arc<Mutex<HashMap<String, serde_json::Value>>> =
         Arc::new(Mutex::new(HashMap::new()));
-    api::read_mappings(registry_path.clone(), mappings.clone());
+
+    api::read_mappings(&registry_path, mappings.clone());
 
     let app_data = web::Data::new(api::AppMutState {
         mappings: mappings.clone(),
-        registry_path: registry_path.clone(),
+        registry_path,
     });
 
     let server = HttpServer::new(move || {

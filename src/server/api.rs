@@ -1,8 +1,7 @@
 use std::{
     collections::HashMap,
     fs::read_dir,
-    path::PathBuf,
-    str::FromStr,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
 
@@ -14,10 +13,10 @@ use serde_json::{json, Value};
 #[derive(Clone)]
 pub struct AppMutState {
     pub mappings: Arc<Mutex<HashMap<String, serde_json::Value>>>,
-    pub registry_path: String,
+    pub registry_path: PathBuf,
 }
 
-// Endpint for loadbalancer to check health of service
+// Endpoint for loadbalancer to check health of service
 #[get("/health")]
 pub async fn health() -> impl Responder {
     log::info!("health");
@@ -27,29 +26,24 @@ pub async fn health() -> impl Responder {
 /// Endpoint to trigger update of the data
 #[get("/reread")]
 pub async fn reread_mappings(app_data: web::Data<AppMutState>) -> impl Responder {
-    read_mappings(app_data.registry_path.clone(), app_data.mappings.clone());
+    read_mappings(&app_data.registry_path, app_data.mappings.clone());
     HttpResponse::Ok().body("Reread contents")
 }
 
-/// Funcion that reads the files in registry_path and updates the mappings
+/// Function that reads the files in registry_path and updates the mappings
 /// This function should add better error handling by returning a result so
 /// the views can act accordingly!
 pub fn read_mappings(
-    registry_path: String,
+    registry_path: &Path,
     mappings: Arc<Mutex<HashMap<String, serde_json::Value>>>,
 ) {
-    log::debug!("Reading mappings from {}", registry_path);
-
-    // Can we create a PathBuf from registry_path?
-    let path_buf = PathBuf::from_str(&registry_path);
-    if path_buf.is_err() {
-        log::error!("Not a string {}", &registry_path);
-        return;
-    }
+    log::debug!(
+        "Reading mappings from {}",
+        registry_path.to_str().unwrap_or("?")
+    );
 
     // Can we create a ReadDir iterator of the PathBug?
-    let path_buf = path_buf.unwrap();
-    let paths = read_dir(path_buf);
+    let paths = read_dir(registry_path);
 
     let mut mtx = match mappings.lock() {
         Ok(mtx) => mtx,

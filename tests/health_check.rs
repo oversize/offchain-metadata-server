@@ -1,5 +1,5 @@
 //! tests/health_check.rs
-use std::net::TcpListener;
+use std::{net::TcpListener, path::PathBuf};
 use tokenapi::server;
 
 // spawn_app runs the application in the background so we can run tests
@@ -12,7 +12,7 @@ fn spawn_app() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind random port");
     let port = listener.local_addr().unwrap().port();
     let ip = listener.local_addr().unwrap().ip();
-    let mappings = String::from("./registry/mappings");
+    let mappings = PathBuf::from("./registry/mappings");
 
     let server = server::run(listener, mappings).expect("Failed to create server");
 

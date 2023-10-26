@@ -1,5 +1,5 @@
 use env_logger::Env;
-use std::{env, net::TcpListener};
+use std::{env, net::TcpListener, path::PathBuf};
 
 use tokenapi::server;
 
@@ -7,7 +7,9 @@ use tokenapi::server;
 async fn main() -> Result<(), std::io::Error> {
     env_logger::Builder::from_env(Env::default().default_filter_or("warn")).init();
 
-    let registry_path = env::var("MAPPINGS").expect("Missing env var: MAPPINGS (Filepath)");
+    let registry_path =
+        PathBuf::from(env::var("MAPPINGS").expect("Missing env var: MAPPINGS (Filepath)"));
+
     let listen_address = env::var("LISTEN").expect("Missing env var: LISTEN (Port number)");
 
     log::info!("Listening on {}", &listen_address);
