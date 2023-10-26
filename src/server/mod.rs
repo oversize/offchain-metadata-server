@@ -12,7 +12,7 @@ pub fn run(listener: TcpListener, registry_path: PathBuf) -> Result<Server, std:
     let mappings: Arc<Mutex<HashMap<String, serde_json::Value>>> =
         Arc::new(Mutex::new(HashMap::new()));
 
-    api::read_mappings(&registry_path, mappings.clone());
+    api::read_mappings(&registry_path, &mappings);
 
     let app_data = web::Data::new(api::AppMutState {
         mappings: mappings.clone(),

@@ -10,7 +10,6 @@ use log;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-#[derive(Clone)]
 pub struct AppMutState {
     pub mappings: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     pub registry_path: PathBuf,
@@ -26,17 +25,14 @@ pub async fn health() -> impl Responder {
 /// Endpoint to trigger update of the data
 #[get("/reread")]
 pub async fn reread_mappings(app_data: web::Data<AppMutState>) -> impl Responder {
-    read_mappings(&app_data.registry_path, app_data.mappings.clone());
+    read_mappings(&app_data.registry_path, &app_data.mappings);
     HttpResponse::Ok().body("Reread contents")
 }
 
 /// Function that reads the files in registry_path and updates the mappings
 /// This function should add better error handling by returning a result so
 /// the views can act accordingly!
-pub fn read_mappings(
-    registry_path: &Path,
-    mappings: Arc<Mutex<HashMap<String, serde_json::Value>>>,
-) {
+pub fn read_mappings(registry_path: &Path, mappings: &Mutex<HashMap<String, serde_json::Value>>) {
     log::debug!(
         "Reading mappings from {}",
         registry_path.to_str().unwrap_or("?")
