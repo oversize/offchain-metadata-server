@@ -12,7 +12,7 @@ fn spawn_app() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind random port");
     let port = listener.local_addr().unwrap().port();
     let ip = listener.local_addr().unwrap().ip();
-    let mappings = String::from("./registry_data");
+    let mappings = String::from("./registry/mappings");
 
     let server = tokenapi::run(listener, mappings).expect("Failed to create server");
 

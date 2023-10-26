@@ -17,7 +17,7 @@ develop:
 
 dockerdevelop:
 	docker run -it --rm --name ${IMAGE} \
-		-v $(pwd)/registry_data:/registry \
+		-v $(pwd)/registry/mappings:/registry \
 		-p 8080:8080 \
 		-e RUST_LOG=debug \
 		${IMAGE}:latest

@@ -1,0 +1,3 @@
+[submodule "registry"]
+	path = registry
+	url = git@github.com:cardano-foundation/cardano-token-registry.git
