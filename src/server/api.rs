@@ -1,12 +1,15 @@
-use std::collections::HashMap;
-use std::fs::read_dir;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    fs::read_dir,
+    path::PathBuf,
+    str::FromStr,
+    sync::{Arc, Mutex},
+};
+
 use actix_web::{get, post, web, HttpResponse, Responder};
+use log;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use log;
 
 #[derive(Clone)]
 pub struct AppMutState {
@@ -180,10 +183,9 @@ pub async fn single_property(
     }))
 }
 
-
 /// A query payload for the batch query endpoint
 #[derive(Deserialize)]
-pub struct Query{
+pub struct Query {
     subjects: Vec<String>,
     properties: Option<Vec<String>>,
 }
@@ -192,11 +194,7 @@ pub struct Query{
 /// If the payload holds 'properties' the subject should be narrowed down
 /// to only these properties
 #[post("/metadata/query")]
-pub async fn query(
-    payload: web::Json<Query>,
-    app_data: web::Data<AppMutState>,
-) -> impl Responder {
-
+pub async fn query(payload: web::Json<Query>, app_data: web::Data<AppMutState>) -> impl Responder {
     let mtx = match app_data.mappings.lock() {
         Ok(mtx) => mtx,
         Err(e) => {
@@ -232,11 +230,8 @@ pub async fn query(
                 // the subject and add to newsubj if existing
                 let mut newsubj: HashMap<&str, &Value> = HashMap::new();
                 for ps in property_strings.iter() {
-                    match subject.get(ps) {
-                        Some(property) => {
-                            newsubj.insert(ps, property);
-                        },
-                        None => {}
+                    if let Some(property) = subject.get(ps) {
+                        newsubj.insert(ps, property);
                     }
                 }
                 // What if none of the properties are found? Then you
@@ -245,7 +240,7 @@ pub async fn query(
                 // of all_properties becomes important so the client can
                 // check which to ask for.
                 return_subjects.push(serde_json::json!(newsubj));
-            },
+            }
             None => {
                 // There are no properties provided, return whole subject
                 return_subjects.push(subject.clone());
